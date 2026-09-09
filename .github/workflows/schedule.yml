@@ -22,8 +22,20 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Run regression tests
         run: python -m unittest discover -s tests -q
+      - name: Check setup
+        id: setup
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Telegram secrets are not configured; publishing is disabled."
+          fi
       - name: Read source and publish confirmed changes
-        if: github.event_name != 'push'
+        if: github.event_name != 'push' && steps.setup.outputs.ready == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
