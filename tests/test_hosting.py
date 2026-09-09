@@ -4,13 +4,30 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from api.telegram import make_reply
+from api.telegram import make_reply, accepts_update
 from bot import TZ, parse_week
 from github_runner import GitStateBot, git
 from test_bot import FakeTelegram, META
 
 
 class HostingTests(unittest.TestCase):
+    def test_unrelated_updates_are_ignored_before_fetch(self):
+        for message in ({}, {'text': 'привет'}, {'text': '/today@another_bot'},
+                        {'text': '/unknown'}, {'photo': [{}]}, {'text': '   '}):
+            message['chat'] = {'id': -100123, 'type': 'supergroup'}
+            self.assertFalse(accepts_update({'message': message}, -100123))
+
+    def test_photo_reply_preserves_pending_warning(self):
+        now = dt.datetime.now(TZ)
+        monday = (now.date()-dt.timedelta(days=now.weekday())).isoformat()
+        state = {'kv': {'last_success': now.isoformat(), 'pending_confirmation': True,
+                        'image:'+monday: {'file_id': 'confirmed-photo'}}}
+        result = make_reply({'update_id': 101, 'message': {'chat': {'id': -100123, 'type': 'supergroup'},
+                            'from': {'id': 42}, 'text': ' /week@msutf_p223_schedule_bot '}}, state, -100123)
+        self.assertEqual(result['method'], 'sendPhoto')
+        self.assertEqual(result['photo'], 'confirmed-photo')
+        self.assertIn('ожидаю повторную проверку', result['caption'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
