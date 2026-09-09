@@ -60,7 +60,7 @@ jobs:
               for update in updates:
                   item = update.get('message') or update.get('my_chat_member') or {}
                   chat = item.get('chat', {})
-                  if chat.get('type') in ('group','supergroup') and chat.get('title','').lower() == 'п2-23':
+                  if chat.get('type') in ('group','supergroup') and chat.get('title','').lower() == 'засираем':
                       candidates[chat['id']] = chat['title']
               print('Matching group events:', json.dumps(candidates, ensure_ascii=False))
               print('Inspection only. Configure TELEGRAM_CHAT_ID after confirming the group.')
