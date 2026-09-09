@@ -1,0 +1,20 @@
+services:
+  schedule:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE: /data/schedule.sqlite3
+    volumes:
+      - schedule-data:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+volumes:
+  schedule-data:

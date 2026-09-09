@@ -1,0 +1,6 @@
+.env
+*.secret
+*.sqlite3*
+tests
+__pycache__
+.git

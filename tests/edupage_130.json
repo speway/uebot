@@ -1,0 +1,1370 @@
+{
+  "dbiAccessorRes": {
+    "tables": [
+      {
+        "id": "classes",
+        "data_rows": [
+          {
+            "id": "-579",
+            "name": "Психология 4 курс П1-23",
+            "short": "П1-23",
+            "teacherid": "",
+            "classroomids": [],
+            "bell": "0",
+            "printsubjectpictures": true,
+            "edupageid": "-579",
+            "classroomid": "",
+            "teacherids": []
+          },
+          {
+            "id": "-580",
+            "name": "Психология 4 курс П2-23",
+            "short": "П2-23",
+            "teacherid": "",
+            "classroomids": [],
+            "bell": "0",
+            "printsubjectpictures": true,
+            "edupageid": "-580",
+            "classroomid": "",
+            "teacherids": []
+          }
+        ]
+      },
+      {
+        "id": "lessons",
+        "data_rows": [
+          {
+            "id": "*59",
+            "subjectid": "-150",
+            "teacherids": [
+              "-113"
+            ],
+            "groupids": [
+              "*71",
+              "*76"
+            ],
+            "classids": [
+              "-579",
+              "-580"
+            ],
+            "count": 2,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*2",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-579": {
+                "divisionid": "-579:",
+                "groups": "1"
+              },
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*61",
+            "subjectid": "-151",
+            "teacherids": [
+              "-84"
+            ],
+            "groupids": [
+              "*76"
+            ],
+            "classids": [
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*62",
+            "subjectid": "-98",
+            "teacherids": [
+              "-119"
+            ],
+            "groupids": [
+              "*71",
+              "*76"
+            ],
+            "classids": [
+              "-579",
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*2",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-579": {
+                "divisionid": "-579:",
+                "groups": "1"
+              },
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*64",
+            "subjectid": "-99",
+            "teacherids": [
+              "-119"
+            ],
+            "groupids": [
+              "*76"
+            ],
+            "classids": [
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*65",
+            "subjectid": "-315",
+            "teacherids": [
+              "-157"
+            ],
+            "groupids": [
+              "*71",
+              "*76"
+            ],
+            "classids": [
+              "-579",
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-579": {
+                "divisionid": "-579:",
+                "groups": "1"
+              },
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*66",
+            "subjectid": "-317",
+            "teacherids": [
+              "-124"
+            ],
+            "groupids": [
+              "*76"
+            ],
+            "classids": [
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*68",
+            "subjectid": "-53",
+            "teacherids": [
+              "-101"
+            ],
+            "groupids": [
+              "*71",
+              "*76"
+            ],
+            "classids": [
+              "-579",
+              "-580"
+            ],
+            "count": 2,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*2",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-579": {
+                "divisionid": "-579:",
+                "groups": "1"
+              },
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*70",
+            "subjectid": "-54",
+            "teacherids": [
+              "-101"
+            ],
+            "groupids": [
+              "*76"
+            ],
+            "classids": [
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*72",
+            "subjectid": "-71",
+            "teacherids": [
+              "-124"
+            ],
+            "groupids": [
+              "*76"
+            ],
+            "classids": [
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*74",
+            "subjectid": "-2039",
+            "teacherids": [
+              "-10"
+            ],
+            "groupids": [
+              "*76"
+            ],
+            "classids": [
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*75",
+            "subjectid": "-252",
+            "teacherids": [
+              "-73"
+            ],
+            "groupids": [
+              "*71",
+              "*76"
+            ],
+            "classids": [
+              "-579",
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-579": {
+                "divisionid": "-579:",
+                "groups": "1"
+              },
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*77",
+            "subjectid": "-253",
+            "teacherids": [
+              "-73"
+            ],
+            "groupids": [
+              "*76"
+            ],
+            "classids": [
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*78",
+            "subjectid": "-1217",
+            "teacherids": [
+              "-84"
+            ],
+            "groupids": [
+              "*71",
+              "*76"
+            ],
+            "classids": [
+              "-579",
+              "-580"
+            ],
+            "count": 2,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*2",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-579": {
+                "divisionid": "-579:",
+                "groups": "1"
+              },
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*80",
+            "subjectid": "-1218",
+            "teacherids": [
+              "-84"
+            ],
+            "groupids": [
+              "*76"
+            ],
+            "classids": [
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*81",
+            "subjectid": "-539",
+            "teacherids": [],
+            "groupids": [
+              "*71",
+              "*76"
+            ],
+            "classids": [
+              "-579",
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-579": {
+                "divisionid": "-579:",
+                "groups": "1"
+              },
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*83",
+            "subjectid": "-540",
+            "teacherids": [],
+            "groupids": [
+              "*76"
+            ],
+            "classids": [
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*479",
+            "subjectid": "-254",
+            "teacherids": [
+              "-363"
+            ],
+            "groupids": [
+              "*71",
+              "*76"
+            ],
+            "classids": [
+              "-579",
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-579": {
+                "divisionid": "-579:",
+                "groups": "1"
+              },
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*481",
+            "subjectid": "-256",
+            "teacherids": [
+              "-363"
+            ],
+            "groupids": [
+              "*76"
+            ],
+            "classids": [
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*526",
+            "subjectid": "-1611",
+            "teacherids": [
+              "-213"
+            ],
+            "groupids": [
+              "*71",
+              "*76"
+            ],
+            "classids": [
+              "-579",
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*2",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-579": {
+                "divisionid": "-579:",
+                "groups": "1"
+              },
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*528",
+            "subjectid": "-1612",
+            "teacherids": [
+              "-213"
+            ],
+            "groupids": [
+              "*76"
+            ],
+            "classids": [
+              "-580"
+            ],
+            "count": 1,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*22",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          },
+          {
+            "id": "*545",
+            "subjectid": "-70",
+            "teacherids": [
+              "-124"
+            ],
+            "groupids": [
+              "*71",
+              "*76"
+            ],
+            "classids": [
+              "-579",
+              "-580"
+            ],
+            "count": 4,
+            "durationperiods": 1,
+            "termsdefid": "*1",
+            "weeksdefid": "*2",
+            "daysdefid": "*7",
+            "terms": "10",
+            "seminargroup": null,
+            "bell": "",
+            "texts": null,
+            "groupnames": [
+              ""
+            ],
+            "classdata": {
+              "-579": {
+                "divisionid": "-579:",
+                "groups": "1"
+              },
+              "-580": {
+                "divisionid": "-580:",
+                "groups": "1"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "cards",
+        "data_rows": [
+          {
+            "id": "*20",
+            "lessonid": "*59",
+            "locked": false,
+            "period": "1",
+            "days": "000100",
+            "weeks": "01000000000000000000",
+            "classroomids": [
+              "-11"
+            ]
+          },
+          {
+            "id": "*21",
+            "lessonid": "*59",
+            "locked": false,
+            "period": "2",
+            "days": "000100",
+            "weeks": "01000000000000000000",
+            "classroomids": [
+              "-11"
+            ]
+          },
+          {
+            "id": "*22",
+            "lessonid": "*62",
+            "locked": false,
+            "period": "1",
+            "days": "001000",
+            "weeks": "01000000000000000000",
+            "classroomids": [
+              "-11"
+            ]
+          },
+          {
+            "id": "*23",
+            "lessonid": "*68",
+            "locked": false,
+            "period": "3",
+            "days": "000010",
+            "weeks": "01000000000000000000",
+            "classroomids": [
+              "-11"
+            ]
+          },
+          {
+            "id": "*24",
+            "lessonid": "*68",
+            "locked": false,
+            "period": "4",
+            "days": "000010",
+            "weeks": "01000000000000000000",
+            "classroomids": [
+              "-11"
+            ]
+          },
+          {
+            "id": "*25",
+            "lessonid": "*78",
+            "locked": false,
+            "period": "2",
+            "days": "100000",
+            "weeks": "01000000000000000000",
+            "classroomids": [
+              "-11"
+            ]
+          },
+          {
+            "id": "*26",
+            "lessonid": "*78",
+            "locked": false,
+            "period": "1",
+            "days": "100000",
+            "weeks": "01000000000000000000",
+            "classroomids": [
+              "-11"
+            ]
+          },
+          {
+            "id": "*424",
+            "lessonid": "*526",
+            "locked": false,
+            "period": "2",
+            "days": "001000",
+            "weeks": "01000000000000000000",
+            "classroomids": [
+              "-11"
+            ]
+          },
+          {
+            "id": "*445",
+            "lessonid": "*545",
+            "locked": false,
+            "period": "4",
+            "days": "010000",
+            "weeks": "01000000000000000000",
+            "classroomids": [
+              "-11"
+            ]
+          },
+          {
+            "id": "*446",
+            "lessonid": "*545",
+            "locked": false,
+            "period": "3",
+            "days": "010000",
+            "weeks": "01000000000000000000",
+            "classroomids": [
+              "-11"
+            ]
+          },
+          {
+            "id": "*447",
+            "lessonid": "*545",
+            "locked": false,
+            "period": "4",
+            "days": "001000",
+            "weeks": "01000000000000000000",
+            "classroomids": [
+              "-11"
+            ]
+          },
+          {
+            "id": "*448",
+            "lessonid": "*545",
+            "locked": false,
+            "period": "3",
+            "days": "001000",
+            "weeks": "01000000000000000000",
+            "classroomids": [
+              "-11"
+            ]
+          },
+          {
+            "id": "*639",
+            "lessonid": "*61",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*641",
+            "lessonid": "*64",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*642",
+            "lessonid": "*65",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*643",
+            "lessonid": "*66",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*646",
+            "lessonid": "*70",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*648",
+            "lessonid": "*72",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*650",
+            "lessonid": "*74",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*651",
+            "lessonid": "*75",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*653",
+            "lessonid": "*77",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*655",
+            "lessonid": "*80",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*656",
+            "lessonid": "*81",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*658",
+            "lessonid": "*83",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*954",
+            "lessonid": "*479",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*956",
+            "lessonid": "*481",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          },
+          {
+            "id": "*997",
+            "lessonid": "*528",
+            "locked": false,
+            "period": "",
+            "days": "",
+            "weeks": "",
+            "classroomids": []
+          }
+        ]
+      },
+      {
+        "id": "subjects",
+        "data_rows": [
+          {
+            "id": "-53",
+            "name": "ДВ №1 Психология массовых коммуникаций (лекция)",
+            "short": "Психология массовых коммуникаций (лекция)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-53"
+          },
+          {
+            "id": "-54",
+            "name": "ДВ №1 Психология массовых коммуникаций (семинар)",
+            "short": "Психология массовых коммуникаций (семинар)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-54"
+          },
+          {
+            "id": "-70",
+            "name": "ДВ №5  Психология переговоров (лекция)",
+            "short": "Психология переговоров (лекция)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-70"
+          },
+          {
+            "id": "-71",
+            "name": "ДВ №5  Психология переговоров (семинар)",
+            "short": "Психология переговоров (семинар)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-71"
+          },
+          {
+            "id": "-98",
+            "name": "Дифференциальная психология (лекция)",
+            "short": "Дифференциальная психология (лекция)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-98"
+          },
+          {
+            "id": "-99",
+            "name": "Дифференциальная психология (семинар)",
+            "short": "Дифференциальная психология (семинар)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-99"
+          },
+          {
+            "id": "-150",
+            "name": "История психологии (лекция)",
+            "short": "История психологии (лекция)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-150"
+          },
+          {
+            "id": "-151",
+            "name": "История психологии (семинар)",
+            "short": "История психологии (семинар)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-151"
+          },
+          {
+            "id": "-252",
+            "name": "Методика преподавания психологии (лекция)",
+            "short": "Методика преподавания психологии (лекция)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-252"
+          },
+          {
+            "id": "-253",
+            "name": "Методика преподавания психологии (семинар)",
+            "short": "Методика преподавания психологии (семинар)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-253"
+          },
+          {
+            "id": "-254",
+            "name": "Методологические основы психологии (лекция)",
+            "short": "Методологические основы психологии (лекция)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-254"
+          },
+          {
+            "id": "-256",
+            "name": "Методологические основы психологии (семинар)",
+            "short": "Методологические основы психологии (семинар)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-256"
+          },
+          {
+            "id": "-315",
+            "name": "Основы консультативной психологии (лекция)",
+            "short": "Основы консультативной психологии (лекция)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-315"
+          },
+          {
+            "id": "-317",
+            "name": "Основы консультативной психологии (семинар)",
+            "short": "Основы консультативной психологии (семинар)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-317"
+          },
+          {
+            "id": "-1217",
+            "name": "Профессиональная этика психолога (лекция)",
+            "short": "Профессиональная этика психолога (лекция)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-1217"
+          },
+          {
+            "id": "-1218",
+            "name": "Профессиональная этика психолога (семинар)",
+            "short": "Профессиональная этика психолога (семинар)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-1218"
+          },
+          {
+            "id": "-1611",
+            "name": "Психология рекламы (лекция)",
+            "short": "Психология рекламы (лекция)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-1611"
+          },
+          {
+            "id": "-1612",
+            "name": "Психология рекламы (семинар)",
+            "short": "Психология рекламы (семинар)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-1612"
+          },
+          {
+            "id": "-539",
+            "name": "Современные концепции естествознания (лекция)",
+            "short": "Современные концепции естествознания (лекция)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-539"
+          },
+          {
+            "id": "-540",
+            "name": "Современные концепции естествознания (семинар)",
+            "short": "Современные концепции естествознания (семинар)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-540"
+          },
+          {
+            "id": "-2039",
+            "name": "Социально-психологический тренинг (семинар)",
+            "short": "Социально-психологический тренинг (семинар)",
+            "picture_url": "",
+            "contract_weight": 1,
+            "edupageid": "-2039"
+          }
+        ]
+      },
+      {
+        "id": "teachers",
+        "data_rows": [
+          {
+            "id": "-10",
+            "short": "доц. Бабаджанова Н.Р.",
+            "bell": "",
+            "edupageid": "-10",
+            "classids": []
+          },
+          {
+            "id": "-157",
+            "short": "доц. Битюцкая Е.В.",
+            "bell": "",
+            "edupageid": "-157",
+            "classids": []
+          },
+          {
+            "id": "-363",
+            "short": "Булгакова Е.А.",
+            "bell": "",
+            "edupageid": "-363",
+            "classids": []
+          },
+          {
+            "id": "-213",
+            "short": "Кариева Н.Т",
+            "bell": "",
+            "edupageid": "-213",
+            "classids": []
+          },
+          {
+            "id": "-73",
+            "short": "доц. Можаровский И.Л.",
+            "bell": "",
+            "edupageid": "-73",
+            "classids": []
+          },
+          {
+            "id": "-84",
+            "short": "преп. Роднина К.А.",
+            "bell": "",
+            "edupageid": "-84",
+            "classids": []
+          },
+          {
+            "id": "-101",
+            "short": "доц. Султанова Л.З.",
+            "bell": "",
+            "edupageid": "-101",
+            "classids": []
+          },
+          {
+            "id": "-113",
+            "short": "доц. Усманова.Э.З.",
+            "bell": "",
+            "edupageid": "-113",
+            "classids": []
+          },
+          {
+            "id": "-119",
+            "short": "PhD Хабиев Т.Р.",
+            "bell": "",
+            "edupageid": "-119",
+            "classids": []
+          },
+          {
+            "id": "-124",
+            "short": "преп. Цой С.В.",
+            "bell": "",
+            "edupageid": "-124",
+            "classids": []
+          }
+        ]
+      },
+      {
+        "id": "classrooms",
+        "data_rows": [
+          {
+            "id": "-11",
+            "name": "313",
+            "short": "313",
+            "buildingid": "",
+            "bell": ""
+          }
+        ]
+      },
+      {
+        "id": "periods",
+        "data_rows": [
+          {
+            "id": "1",
+            "period": "1",
+            "name": "1",
+            "short": "1",
+            "starttime": "09:00",
+            "endtime": "10:30",
+            "daydata": {},
+            "printinsummary": true,
+            "printinteacher": true,
+            "printinclass": true,
+            "printinclassroom": true,
+            "printonlyinbells": []
+          },
+          {
+            "id": "2",
+            "period": "2",
+            "name": "2",
+            "short": "2",
+            "starttime": "10:45",
+            "endtime": "12:15",
+            "daydata": {},
+            "printinsummary": true,
+            "printinteacher": true,
+            "printinclass": true,
+            "printinclassroom": true,
+            "printonlyinbells": []
+          },
+          {
+            "id": "3",
+            "period": "3",
+            "name": "3",
+            "short": "3",
+            "starttime": "13:15",
+            "endtime": "14:45",
+            "daydata": {},
+            "printinsummary": true,
+            "printinteacher": true,
+            "printinclass": true,
+            "printinclassroom": true,
+            "printonlyinbells": []
+          },
+          {
+            "id": "4",
+            "period": "4",
+            "name": "4",
+            "short": "4",
+            "starttime": "15:00",
+            "endtime": "16:30",
+            "daydata": {},
+            "printinsummary": true,
+            "printinteacher": true,
+            "printinclass": true,
+            "printinclassroom": true,
+            "printonlyinbells": []
+          },
+          {
+            "id": "5",
+            "period": "5",
+            "name": "5",
+            "short": "5",
+            "starttime": "16:45",
+            "endtime": "18:15",
+            "daydata": {},
+            "printinsummary": true,
+            "printinteacher": true,
+            "printinclass": true,
+            "printinclassroom": true,
+            "printonlyinbells": []
+          },
+          {
+            "id": "6",
+            "period": "6",
+            "name": "6",
+            "short": "6",
+            "starttime": "18:30",
+            "endtime": "20:00",
+            "daydata": {},
+            "printinsummary": true,
+            "printinteacher": true,
+            "printinclass": true,
+            "printinclassroom": true,
+            "printonlyinbells": [
+              "2"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
