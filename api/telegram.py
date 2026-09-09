@@ -9,6 +9,21 @@ import urllib.request
 from bot import Bot, INTRO, TZ
 
 
+def accepts_update(update, chat_id):
+    if not isinstance(update, dict):
+        return False
+    message = update.get('message') or {}
+    chat = message.get('chat') or {}
+    if chat.get('id') != chat_id and chat.get('type') != 'private':
+        return False
+    parts = (message.get('text') or '').strip().split()
+    if not parts:
+        return False
+    command, _, address = parts[0].partition('@')
+    return (command in ('/start', '/help', '/today', '/tomorrow', '/week', '/nextweek', '/status')
+            and (not address or address.lower() == 'msutf_p223_schedule_bot'))
+
+
 class ReplyCollector:
     def __init__(self):
         self.messages = []
@@ -20,6 +35,8 @@ class ReplyCollector:
 
 
 def make_reply(update, state, chat_id):
+    if not accepts_update(update, chat_id):
+        return {'ok': True}
     collector = ReplyCollector()
     bot = Bot(collector, chat_id, ':memory:')
     bot.username = 'msutf_p223_schedule_bot'
@@ -38,7 +55,7 @@ def make_reply(update, state, chat_id):
             response['text'] += '\n\n<i>Данные давно не проверялись. Сверься с EduPage.</i>'
         elif state.get('kv', {}).get('pending_confirmation'):
             response['text'] += '\n\n<i>На сайте замечено изменение; ожидаю повторную проверку.</i>'
-        command=update.get('message',{}).get('text','').split()[0].split('@')[0]
+        command=update.get('message',{}).get('text','').strip().split()[0].split('@')[0]
         if command in ('/week','/nextweek'):
             today=dt.datetime.now(TZ).date()
             monday=today-dt.timedelta(days=today.weekday())+dt.timedelta(days=7 if command=='/nextweek' else 0)
@@ -79,6 +96,13 @@ class handler(BaseHTTPRequestHandler):
                 return self.respond(413, {'ok': False})
             update = json.loads(self.rfile.read(size))
             chat_id = int(os.environ['TELEGRAM_CHAT_ID'])
+            if not accepts_update(update, chat_id):
+                return self.respond(200, {'ok': True})
+            command = update['message']['text'].strip().split()[0].split('@')[0]
+            if command in ('/start', '/help'):
+                reply = make_reply(update, {'kv': {}}, chat_id)
+                reply['text'] = reply['text'].replace('\n\n<i>Данные давно не проверялись. Сверься с EduPage.</i>', '')
+                return self.respond(200, reply)
             url = os.environ['STATE_URL']
             if not url.startswith('https://raw.githubusercontent.com/'):
                 raise ValueError('STATE_URL must point to the public schedule snapshot')
