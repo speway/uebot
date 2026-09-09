@@ -1,0 +1,90 @@
+name: Configure Telegram webhook
+on:
+  workflow_dispatch:
+    inputs:
+      configure:
+        description: Register the production webhook after Vercel variables are deployed
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: ['.github/workflows/telegram-setup.yml']
+permissions:
+  contents: read
+concurrency:
+  group: telegram-webhook-setup
+  cancel-in-progress: false
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify bot and configure webhook
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          CONFIGURE: ${{ inputs.configure }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error
+          token = os.environ['TELEGRAM_BOT_TOKEN']
+          if not token:
+              raise SystemExit('Missing TELEGRAM_BOT_TOKEN')
+          def api(method, **data):
+              request = urllib.request.Request(
+                  'https://api.telegram.org/bot' + token + '/' + method,
+                  data=json.dumps(data).encode(),
+                  headers={'Content-Type':'application/json'})
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      result = json.load(response)
+              except Exception:
+                  raise SystemExit('Telegram request failed: ' + method) from None
+              if not result.get('ok'):
+                  raise SystemExit('Telegram rejected: ' + method)
+              return result['result']
+          me = api('getMe')
+          if me.get('username') != 'msutf_p223_schedule_bot':
+              raise SystemExit('Unexpected bot identity')
+          print('Verified bot: @' + me['username'])
+          info = api('getWebhookInfo')
+          print('Webhook registered:', bool(info.get('url')))
+          print('Pending updates:', info.get('pending_update_count', 0))
+          chat_id = os.environ.get('TELEGRAM_CHAT_ID', '')
+          if not chat_id:
+              if info.get('url'):
+                  raise SystemExit('Set TELEGRAM_CHAT_ID before configuration')
+              updates = api('getUpdates', timeout=0, allowed_updates=['message','my_chat_member'])
+              candidates = {}
+              for update in updates:
+                  item = update.get('message') or update.get('my_chat_member') or {}
+                  chat = item.get('chat', {})
+                  if chat.get('type') in ('group','supergroup') and chat.get('title','').lower() == 'п2-23':
+                      candidates[chat['id']] = chat['title']
+              print('Matching group events:', json.dumps(candidates, ensure_ascii=False))
+              print('Inspection only. Configure TELEGRAM_CHAT_ID after confirming the group.')
+          else:
+              chat = api('getChat', chat_id=int(chat_id))
+              member = api('getChatMember', chat_id=int(chat_id), user_id=me['id'])
+              print('Configured group verified:', chat.get('type') in ('group','supergroup'))
+              print('Bot membership:', member.get('status'))
+              if member.get('status') in ('left','kicked'):
+                  raise SystemExit('Bot is not a member of the target group')
+              if os.environ.get('CONFIGURE') == 'true':
+                  secret = os.environ.get('WEBHOOK_SECRET','')
+                  if not secret:
+                      raise SystemExit('Missing WEBHOOK_SECRET')
+                  endpoint = 'https://uebot.vercel.app/api/telegram'
+                  with urllib.request.urlopen(endpoint, timeout=20) as response:
+                      health = json.load(response)
+                  if health.get('service') != 'p223-schedule-bot':
+                      raise SystemExit('Unexpected endpoint')
+                  api('setWebhook', url=endpoint, secret_token=secret, allowed_updates=['message'])
+                  info = api('getWebhookInfo')
+                  if info.get('url') != endpoint:
+                      raise SystemExit('Webhook URL mismatch')
+                  print('Production webhook registered and verified.')
+                  print('Pending updates:', info.get('pending_update_count',0))
+                  print('Delivery error present:', bool(info.get('last_error_message')))
+          PY
