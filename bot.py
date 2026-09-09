@@ -372,7 +372,8 @@ class Bot:
             return
         key='image:'+snapshot['week']
         prior=self.get(key, {})
-        fingerprint=digest(snapshot['lessons'])
+        from schedule_image import DESIGN_VERSION
+        fingerprint=digest({'lessons': snapshot['lessons'], 'design': DESIGN_VERSION})
         if prior.get('hash') == fingerprint: return
         from schedule_image import render_image
         image=render_image(snapshot)
