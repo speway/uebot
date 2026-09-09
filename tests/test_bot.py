@@ -28,6 +28,36 @@ class FakeTelegram:
 
 
 class ScheduleTests(unittest.TestCase):
+    def test_photo_publish_updates_without_duplicate(self):
+        from unittest.mock import Mock
+        self.api.photo = Mock(return_value={'message_id': 201, 'photo': [{'file_id': 'photo1'}]})
+        self.bot.publish_image(self.week)
+        self.bot.publish_image(self.week)
+        self.assertEqual(self.api.photo.call_count, 1)
+        changed = copy.deepcopy(self.week)
+        changed['lessons'][0]['rooms'] = ['215']
+        self.bot.publish_image(changed)
+        self.assertEqual(self.api.photo.call_count, 2)
+        self.assertEqual(self.api.photo.call_args.args[-1], 201)
+
+    def test_uncertain_photo_send_is_not_repeated(self):
+        from unittest.mock import Mock
+        self.api.photo = Mock(side_effect=RuntimeError('timeout'))
+        with self.assertRaises(RuntimeError):
+            self.bot.publish_image(self.week)
+        self.bot.publish_image(self.week)
+        self.assertEqual(self.api.photo.call_count, 1)
+        self.assertTrue(self.bot.get('delivery_attention'))
+
+    def test_grid_is_valid_telegram_photo(self):
+        from io import BytesIO
+        from PIL import Image
+        from schedule_image import render_image
+        with Image.open(BytesIO(render_image(self.week))) as im:
+            self.assertLess(im.width + im.height, 10000)
+            self.assertLess(max(im.width/im.height, im.height/im.width), 20)
+            self.assertEqual(im.format, 'PNG')
+
     def setUp(self):
         self.raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())
         self.week = parse_week(self.raw, META)
