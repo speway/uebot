@@ -15,7 +15,7 @@ class ImageTests(unittest.TestCase):
 
     def test_real_week_is_valid_telegram_image(self):
         im=Image.open(BytesIO(render_image(self.snapshot())))
-        self.assertEqual(im.width,1080)
+        self.assertGreaterEqual(im.width,1080)  # Grid expands to keep every time slot readable.
         self.assertLess(im.width+im.height,10000)
         self.assertLess(im.height/im.width,20)
 
