@@ -281,6 +281,29 @@ class Telegram:
             raise RuntimeError('Telegram отклонил запрос')
         return answer['result']
 
+    def photo(self, chat_id, image, caption, message_id=None):
+        import uuid
+        boundary = uuid.uuid4().hex
+        fields = {'chat_id': str(chat_id)}
+        method = 'sendPhoto'
+        if message_id:
+            method = 'editMessageMedia'
+            fields.update(message_id=str(message_id), media=json.dumps({'type': 'photo', 'media': 'attach://photo', 'caption': caption}))
+        else:
+            fields.update(caption=caption, disable_notification='true')
+        chunks=[]
+        for key,value in fields.items():
+            chunks.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode())
+        chunks.append(f'--{boundary}\r\nContent-Disposition: form-data; name="photo"; filename="schedule.png"\r\nContent-Type: image/png\r\n\r\n'.encode()+image+b'\r\n')
+        chunks.append(f'--{boundary}--\r\n'.encode())
+        request=urllib.request.Request('https://api.telegram.org/bot' + self.token + '/' + method, data=b''.join(chunks), headers={'Content-Type': 'multipart/form-data; boundary='+boundary})
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response: result=json.load(response)
+        except Exception:
+            raise RuntimeError('Telegram photo delivery failed') from None
+        if not result.get('ok'): raise RuntimeError('Telegram rejected photo')
+        return result['result']
+
     def send(self, chat_id, text, **extra):
         return self.call('sendMessage', chat_id=chat_id, text=text, parse_mode='HTML',
                          link_preview_options={'is_disabled': True}, **extra)
@@ -344,6 +367,28 @@ class Bot:
                              text='П2‑23 · Расписание обновлено в основном сообщении за эту неделю.')
         self.put(key, stored)
 
+    def publish_image(self, snapshot):
+        if not hasattr(self.tg, 'photo') or not snapshot['lessons']:
+            return
+        key='image:'+snapshot['week']
+        prior=self.get(key, {})
+        fingerprint=digest(snapshot['lessons'])
+        if prior.get('hash') == fingerprint: return
+        from schedule_image import render_image
+        image=render_image(snapshot)
+        reservation='image-send:'+snapshot['week']+':'+str(snapshot.get('revision',0))+':'+fingerprint
+        if not prior.get('message_id'):
+            if self.get(reservation):
+                self.put('delivery_attention', True)
+                return
+            self.put(reservation, True)
+        try:
+            result=self.tg.photo(self.chat_id, image, 'П2-23 · '+snapshot['week']+' · Время Ташкента', prior.get('message_id'))
+        except Exception:
+            self.put('delivery_attention', True)
+            raise
+        self.put(key, {'hash':fingerprint,'message_id':result['message_id'],'file_id':result['photo'][-1]['file_id']})
+
     def daily_digest(self, now):
         if not 19 <= now.hour < 23:
             return
@@ -387,6 +432,7 @@ class Bot:
                     self.send_once(f'change:{key}:{snapshot["revision"]}:{fingerprint}:{i}', message)
             elif not old and lessons:
                 self.publish_week(snapshot)
+            self.publish_image(snapshot)
             self.put(key, snapshot)
             self.put('candidate:' + key, None)
         self.put('last_success', now.isoformat())

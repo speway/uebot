@@ -38,6 +38,7 @@ class GitStateBot(Bot):
         # This file contains only published university lessons and check status.
         public = {key: value for key, value in state.items() if key.startswith('week:') or
                   key in ('last_success', 'source_error', 'delivery_attention')}
+        public.update({key: {'file_id':value['file_id']} for key,value in state.items() if key.startswith('image:')})
         public['pending_confirmation'] = any(value for key, value in state.items() if key.startswith('candidate:'))
         (self.state_dir / 'schedule.json').write_text(json.dumps({'schema': 1, 'kv': public}, ensure_ascii=False, sort_keys=True))
         git('add', 'state.json', 'schedule.json', cwd=self.state_dir)

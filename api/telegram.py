@@ -38,6 +38,16 @@ def make_reply(update, state, chat_id):
             response['text'] += '\n\n<i>Данные давно не проверялись. Сверься с EduPage.</i>'
         elif state.get('kv', {}).get('pending_confirmation'):
             response['text'] += '\n\n<i>На сайте замечено изменение; ожидаю повторную проверку.</i>'
+        command=update.get('message',{}).get('text','').split()[0].split('@')[0]
+        if command in ('/week','/nextweek'):
+            today=dt.datetime.now(TZ).date()
+            monday=today-dt.timedelta(days=today.weekday())+dt.timedelta(days=7 if command=='/nextweek' else 0)
+            photo=state.get('kv',{}).get('image:'+monday.isoformat(),{}).get('file_id')
+            if photo:
+                caption='П2-23 · Неделя с '+monday.strftime('%d.%m.%Y')+' · Время Ташкента'
+                if stale: caption+='\nДанные давно не проверялись. Сверься с EduPage.'
+                elif state.get('kv',{}).get('pending_confirmation'): caption+='\nНа сайте замечено изменение; ожидаю повторную проверку.'
+                return {'method':'sendPhoto','chat_id':response['chat_id'],'photo':photo,'caption':caption}
         return response
     finally:
         bot.db.close()
