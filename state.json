@@ -21,6 +21,9 @@
       "message_id": 34356,
       "status": "sent"
     },
+    "sent:weekly:publication:2026-09-14:0:0": {
+      "status": "pending"
+    },
     "source_error": null,
     "week:2026-09-07": {
       "class_name": "Психология 4 курс П2-23",
