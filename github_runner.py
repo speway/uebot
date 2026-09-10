@@ -10,6 +10,10 @@ import urllib.request
 from bot import Bot, Telegram, DeliveryError, EduPage, SourceError
 
 SOURCE_RELAY = 'https://uebot.vercel.app/api/source'
+STATE_BRANCH_VERCEL_CONFIG = json.dumps({
+    '$schema': 'https://openapi.vercel.sh/vercel.json',
+    'git': {'deploymentEnabled': False},
+}, indent=2) + '\n'
 
 
 def git(*args, cwd=None, allowed=(0,)):
@@ -87,7 +91,11 @@ class GitStateBot(Bot):
         public.update({key: {'file_id':value['file_id']} for key,value in state.items() if key.startswith('image:') and value})
         public['pending_confirmation'] = any(value for key, value in state.items() if key.startswith('candidate:'))
         (self.state_dir / 'schedule.json').write_text(json.dumps({'schema': 1, 'kv': public}, ensure_ascii=False, sort_keys=True))
-        git('add', 'state.json', 'schedule.json', cwd=self.state_dir)
+        # Vercel evaluates configuration from the branch being deployed.  The
+        # state branch therefore needs its own opt-out file; keeping the rule
+        # only on main still creates a failed preview for every state commit.
+        (self.state_dir / 'vercel.json').write_text(STATE_BRANCH_VERCEL_CONFIG)
+        git('add', 'state.json', 'schedule.json', 'vercel.json', cwd=self.state_dir)
         changed = git('diff', '--cached', '--quiet', cwd=self.state_dir, allowed=(0, 1)).returncode
         if changed:
             git('commit', '-m', 'Persist schedule check state', cwd=self.state_dir)
