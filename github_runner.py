@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.request
 
@@ -16,6 +17,7 @@ STATE_BRANCH_VERCEL_CONFIG = json.dumps({
     'git': {'deploymentEnabled': False},
 }, indent=2) + '\n'
 MINIMUM_SOURCE_INTERVAL = dt.timedelta(minutes=4)
+CONFIRMATION_RECHECK_SECONDS = 15
 
 
 def git(*args, cwd=None, allowed=(0,)):
@@ -82,6 +84,15 @@ def checked_recently(value, now=None):
     return dt.timedelta(0) <= age < MINIMUM_SOURCE_INTERVAL
 
 
+def check_with_confirmation(bot, fetcher=fetch_snapshots, sleeper=time.sleep, now=None):
+    """Confirm a detected change inside the same run when scheduled runs are delayed."""
+    bot.check(fetcher(), now)
+    pending = any(value for _, value in bot._items('candidate:') if value)
+    if pending:
+        sleeper(CONFIRMATION_RECHECK_SECONDS)
+        bot.check(fetcher(), now)
+
+
 class GitStateBot(Bot):
     def __init__(self, telegram, chat_id, database, state_dir, require_existing=False):
         super().__init__(telegram, chat_id, database)
@@ -134,6 +145,7 @@ def main():
         git('config', 'user.name', 'github-actions[bot]', cwd=state_dir)
         git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com', cwd=state_dir)
         bot = GitStateBot(Telegram(token), chat_id, str(Path(temporary) / 'state.sqlite3'), state_dir, exists)
+        bot.configure()
         if os.getenv('RECOVER_LAUNCH') == 'true':
             # Explicit one-time operator recovery after the revoked-token launch.
             # Leave all confirmed message IDs and successful publication records intact.
@@ -147,13 +159,13 @@ def main():
                     if not bot.get('image:' + week):
                         bot.put(key, None)
             bot.put('delivery_attention', False)
-        elif checked_recently(bot.get('last_success')):
-            # Push bursts are serialized but can still reach the source only
-            # seconds apart.  A skipped run is successful; the next cron run
-            # performs the normal check once the minimum interval has passed.
+        elif os.getenv('GITHUB_EVENT_NAME') == 'schedule' and checked_recently(bot.get('last_success')):
+            # Scheduler delays can release queued jobs only seconds apart.
+            # Only overlapping scheduled runs are skipped;
+            # code pushes and manual runs must publish their requested refresh.
             return
         try:
-            bot.check(fetch_snapshots())
+            check_with_confirmation(bot)
         except DeliveryError:
             # Publication failures must never mark a successful source fetch as failed.
             raise

@@ -26,7 +26,18 @@ SOURCE = 'https://msu2006.edupage.org'
 GROUP = 'П2-23'
 TZ = ZoneInfo('Asia/Tashkent')
 DAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
-INTRO = 'Бот чисто для своих кентиков из лучшей группы П2‑23.'
+INTRO = ('Я читаю EduPage за П2‑23, потому что самостоятельно открыть расписание — '
+         'видимо, отдельная дисциплина по выбору.')
+BOT_CONFIG_VERSION = 2
+BOT_COMMANDS = [
+    {'command': 'today', 'description': 'Что терпим сегодня'},
+    {'command': 'tomorrow', 'description': 'К чему готовиться завтра'},
+    {'command': 'next', 'description': 'Ближайшая пара и сколько до неё'},
+    {'command': 'week', 'description': 'Эта неделя картинкой'},
+    {'command': 'nextweek', 'description': 'Следующая неделя картинкой'},
+    {'command': 'status', 'description': 'Свежесть данных и здоровье бота'},
+    {'command': 'help', 'description': 'Что вообще умеет этот трудяга'},
+]
 LOG = logging.getLogger('schedule')
 
 
@@ -48,6 +59,79 @@ def normalized(value):
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+
+
+def plural_ru(number, one, few, many):
+    """Return a Russian noun form without pulling morphology into a tiny bot."""
+    number = abs(int(number))
+    if number % 100 in range(11, 15):
+        return many
+    if number % 10 == 1:
+        return one
+    if number % 10 in range(2, 5):
+        return few
+    return many
+
+
+def clean_spaces(value):
+    return re.sub(r'\s+', ' ', str(value or '')).strip()
+
+
+def merge_adjacent_lessons(lessons):
+    """Merge consecutive identical classes for display, never for comparison."""
+    merged = []
+    for source in sorted(lessons, key=lambda x: (x['date'], x['start'], x['end'], x['subject'])):
+        item = dict(source)
+        item['subject'] = clean_spaces(item['subject'])
+        item['_pairs'] = 1
+        if merged:
+            previous = merged[-1]
+            gap = (dt.datetime.strptime(item['start'], '%H:%M') -
+                   dt.datetime.strptime(previous['end'], '%H:%M')).total_seconds()
+            same = (previous['date'] == item['date'] and
+                    all(previous[k] == item[k] for k in ('subject', 'teachers', 'rooms', 'groups')))
+            if same and 0 <= gap <= 1200:
+                previous['end'] = item['end']
+                previous['_pairs'] += 1
+                previous['_break'] = int(gap // 60)
+                continue
+        merged.append(item)
+    return merged
+
+
+def week_stats(snapshot):
+    lessons = snapshot.get('lessons', [])
+    days = len({item['date'] for item in lessons})
+    rooms = sorted({room for item in lessons for room in item.get('rooms', [])})
+    return len(lessons), days, rooms
+
+
+def week_end(snapshot):
+    start = dt.date.fromisoformat(snapshot['week'])
+    has_sunday = any(item.get('date') == (start + dt.timedelta(days=6)).isoformat()
+                     for item in snapshot.get('lessons', []))
+    return start + dt.timedelta(days=6 if has_sunday else 5)
+
+
+def week_caption(snapshot, checked_at=None):
+    start = dt.date.fromisoformat(snapshot['week'])
+    end = week_end(snapshot)
+    lesson_count, day_count, rooms = week_stats(snapshot)
+    pair_word = plural_ru(lesson_count, 'пара', 'пары', 'пар')
+    day_word = plural_ru(day_count, 'учебный день', 'учебных дня', 'учебных дней')
+    room_line = ''
+    if rooms:
+        room_line = '\nАудитории: ' + html.escape(', '.join(rooms))
+    checked_line = ''
+    if checked_at:
+        try:
+            checked = dt.datetime.fromisoformat(checked_at).astimezone(TZ)
+            checked_line = f'\nПроверено: {checked:%d.%m в %H:%M}'
+        except (TypeError, ValueError):
+            pass
+    return (f'<b>П2‑23 · {start:%d.%m}–{end:%d.%m.%Y}</b>\n'
+            f'{lesson_count} {pair_word} · {day_count} {day_word}{room_line}{checked_line}\n\n'
+            '<i>Сохрани. Память перед первой парой — источник менее надёжный.</i>')
 
 
 def ipv4_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
@@ -90,23 +174,25 @@ class IPv4HTTPSHandler(urllib.request.HTTPSHandler):
 
 
 class EduPage:
-    def __init__(self):
+    def __init__(self, timeout=25, attempts=3):
         # EduPage advertises IPv6, while hosted runners currently have no IPv6 route.
         # Keep this transport scoped to EduPage; Telegram and GitHub retain defaults.
         self.http = urllib.request.build_opener(
             IPv4HTTPSHandler(), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         self.gsh = ''
+        self.timeout = max(1, int(timeout))
+        self.attempts = max(1, int(attempts))
 
     def read(self, request):
         # These endpoints only read published timetable data, so retries are safe.
-        for attempt in range(3):
+        for attempt in range(self.attempts):
             try:
-                with self.http.open(request, timeout=25) as response:
+                with self.http.open(request, timeout=self.timeout) as response:
                     return response.read()
             except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
                 if isinstance(exc, urllib.error.HTTPError) and exc.code < 500 and exc.code != 429:
                     raise SourceError('EduPage HTTP ' + str(exc.code)) from None
-                if attempt == 2:
+                if attempt == self.attempts - 1:
                     reason = getattr(exc, 'reason', exc)
                     raise SourceError('EduPage connection: ' + type(reason).__name__ + ': ' + str(reason)) from None
                 time.sleep(2 ** attempt)
@@ -214,7 +300,7 @@ def parse_week(raw, meta):
 
 def lesson_text(item):
     esc = html.escape
-    text = f"<b>{esc(item['start'])}–{esc(item['end'])}</b>  {esc(item['subject'])}"
+    text = f"<b>{esc(item['start'])}–{esc(item['end'])}</b>  {esc(clean_spaces(item['subject']))}"
     details = [' / '.join(item['teachers']) or 'Преподаватель не указан',
                'ауд. ' + ', '.join(item['rooms']) if item['rooms'] else 'Аудитория не указана']
     if item['groups']:
@@ -224,28 +310,75 @@ def lesson_text(item):
 
 def render_day(date, lessons):
     day = dt.date.fromisoformat(date)
+    lessons = sorted(lessons, key=lambda x: (x['start'], x['end'], x['subject']))
     lines = [f'<b>{DAYS[day.weekday()]} · {day:%d.%m}</b>']
+    if lessons:
+        count = len(lessons)
+        pair_word = plural_ru(count, 'пара', 'пары', 'пар')
+        lines[0] += f"\n{count} {pair_word} · {lessons[0]['start']}–{lessons[-1]['end']}"
     # Merge adjacent pairs only for display; keep individual pairs in the change detector.
-    merged = []
-    for item in lessons:
-        item = dict(item)
-        if merged:
-            previous = merged[-1]
-            gap = (dt.datetime.strptime(item['start'], '%H:%M') - dt.datetime.strptime(previous['end'], '%H:%M')).total_seconds()
-            if 0 <= gap <= 1200 and all(previous[k] == item[k] for k in ('subject', 'teachers', 'rooms', 'groups')):
-                previous['end'] = item['end']
-                previous['_pairs'] = previous.get('_pairs', 1) + 1
-                continue
-        merged.append(item)
-    lines.extend(lesson_text(item) + (f"\n{item['_pairs']} пары · с перерывом" if item.get('_pairs') else '') for item in merged)
+    merged = merge_adjacent_lessons(lessons)
+    for item in merged:
+        block = lesson_text(item)
+        if item['_pairs'] > 1:
+            pair_word = plural_ru(item['_pairs'], 'пара', 'пары', 'пар')
+            block += f"\n{item['_pairs']} {pair_word} подряд"
+            if item.get('_break'):
+                block += f" · перерыв {item['_break']} мин"
+        lines.append(block)
     if not lessons:
-        lines.append('В опубликованном расписании занятий нет.')
+        lines.append('Пар нет. Редкая победа календаря над системой образования.')
     return '\n\n'.join(lines)
+
+
+def short_wait(delta):
+    minutes = max(0, int(delta.total_seconds() // 60))
+    hours, minutes = divmod(minutes, 60)
+    if hours and minutes:
+        return f'{hours} ч {minutes} мин'
+    if hours:
+        return f'{hours} ч'
+    return f'{minutes} мин'
+
+
+def day_tease(date, lessons, now):
+    """Useful timing first, friendly roast second."""
+    if not lessons:
+        return 'Можно продолжить делать вид, что все дедлайны под контролем.'
+    lessons = sorted(lessons, key=lambda item: (item['start'], item['end'], item['subject']))
+    start = dt.datetime.combine(date, dt.time.fromisoformat(lessons[0]['start']), TZ)
+    end = dt.datetime.combine(date, dt.time.fromisoformat(lessons[-1]['end']), TZ)
+    if date > now.date():
+        return (f"Первая пара в {lessons[0]['start']}. Будильник поставь сейчас: "
+                'утренний ты — крайне ненадёжный коллега.')
+    if date < now.date() or now >= end:
+        return 'На сегодня всё. Академический урон получен, можно восстанавливаться.'
+    if now < start:
+        return f'До первой пары {short_wait(start - now)}. Времени достаточно даже на отрицание.'
+    for item in lessons:
+        item_start = dt.datetime.combine(date, dt.time.fromisoformat(item['start']), TZ)
+        item_end = dt.datetime.combine(date, dt.time.fromisoformat(item['end']), TZ)
+        if item_start <= now < item_end:
+            return f"Сейчас идёт «{clean_spaces(item['subject'])}» — до {item['end']}. Держимся научно."
+        if now < item_start:
+            return f"Следующая в {item['start']} — через {short_wait(item_start - now)}. Не потеряйся по дороге."
+    return 'На сегодня всё. Академический урон получен, можно восстанавливаться.'
+
+
+def render_day_reply(date, lessons, now):
+    delta = (date - now.date()).days
+    label = 'Сегодня' if delta == 0 else 'Завтра' if delta == 1 else DAYS[date.weekday()]
+    return (f'<b>П2‑23 · {label}</b>\n\n{render_day(date.isoformat(), lessons)}\n\n'
+            f'<i>{html.escape(day_tease(date, lessons, now))}</i>')
 
 
 def render_week(snapshot):
     start = dt.date.fromisoformat(snapshot['week'])
-    result = [f'<b>П2‑23 · Расписание</b>\n{start:%d.%m}–{start + dt.timedelta(days=5):%d.%m.%Y}']
+    end = week_end(snapshot)
+    lesson_count, day_count, _ = week_stats(snapshot)
+    result = [f'<b>П2‑23 · Расписание</b>\n{start:%d.%m}–{end:%d.%m.%Y}\n'
+              f"{lesson_count} {plural_ru(lesson_count, 'пара', 'пары', 'пар')} · "
+              f"{day_count} {plural_ru(day_count, 'учебный день', 'учебных дня', 'учебных дней')}"]
     groups = collections.defaultdict(list)
     for item in snapshot['lessons']:
         groups[item['date']].append(item)
@@ -253,7 +386,8 @@ def render_week(snapshot):
         result.append('В этой публикации занятия П2‑23 пока не расставлены. Это не подтверждение отмены занятий.')
     for date, lessons in sorted(groups.items()):
         result.append(render_day(date, lessons))
-    result.append('<a href="' + SOURCE + '/timetable/">Источник · EduPage</a>\nВремя Ташкента')
+    result.append('<a href="' + SOURCE + '/timetable/">Источник · EduPage</a> · Время Ташкента\n'
+                  '<i>Можешь не запоминать. Я уже совершил эту ошибку за тебя.</i>')
     return split_sections(result)
 
 
@@ -281,7 +415,8 @@ def describe_changes(old, new, today):
     for item in new:
         if item['date'] >= today:
             new_days[item['date']].append(item)
-    sections = ['<b>П2‑23 · Изменения в расписании</b>']
+    sections = ['<b>П2‑23 · Изменения в расписании</b>\n'
+                'EduPage снова переобулся быстрее, чем вы успели запомнить аудиторию.']
     changes = 0
     for date in sorted(old_days.keys() | new_days.keys()):
         a = {digest(x): x for x in old_days[date]}
@@ -314,12 +449,13 @@ def describe_changes(old, new, today):
                 del removed[key]
                 del added[new_key]
         for key in sorted(removed):
-            sections.append('Убрано из расписания:\n' + lesson_text(a[key]))
+            sections.append('<b>Убрали</b> — можете выдохнуть, но пока осторожно:\n' + lesson_text(a[key]))
         for key in sorted(added):
-            sections.append('Добавлено в расписание:\n' + lesson_text(b[key]))
+            sections.append('<b>Добавили</b> — расслабляться было преждевременно:\n' + lesson_text(b[key]))
     if not changes:
         return []
-    sections.append('<a href="' + SOURCE + '/timetable/">Проверить источник</a> · Время Ташкента')
+    sections.append('<a href="' + SOURCE + '/timetable/">Проверить источник</a> · Время Ташкента\n'
+                    '<i>Перепроверьте, чтобы не проводить полевое исследование «Почему аудитория пустая».</i>')
     return split_sections(sections)
 
 
@@ -356,9 +492,11 @@ class Telegram:
         method = 'sendPhoto'
         if message_id:
             method = 'editMessageMedia'
-            fields.update(message_id=str(message_id), media=json.dumps({'type': 'photo', 'media': 'attach://photo', 'caption': caption}))
+            fields.update(message_id=str(message_id), media=json.dumps({
+                'type': 'photo', 'media': 'attach://photo', 'caption': caption, 'parse_mode': 'HTML'
+            }, ensure_ascii=False))
         else:
-            fields.update(caption=caption, disable_notification='true')
+            fields.update(caption=caption, parse_mode='HTML', disable_notification='true')
         chunks=[]
         for key,value in fields.items():
             chunks.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode())
@@ -421,6 +559,18 @@ class Bot:
         self.put('sent:' + key, {'status': 'sent', 'message_id': result['message_id']})
         return result['message_id']
 
+    def configure(self):
+        """Keep Telegram's visible command menu and profile copy in sync with the code."""
+        if self.get('bot_config_version') == BOT_CONFIG_VERSION:
+            return
+        self.tg.call('setMyCommands', commands=BOT_COMMANDS)
+        self.tg.call('setMyDescription', description=(
+            'Расписание П2‑23 без квеста по EduPage: сегодня, завтра, неделя картинкой, '
+            'изменения и вечерние напоминания. Иногда подкалывает, зато не опаздывает намеренно.'))
+        self.tg.call('setMyShortDescription', short_description=(
+            'Расписание П2‑23. Читает EduPage, считает пары, бережёт остатки вашей памяти.'))
+        self.put('bot_config_version', BOT_CONFIG_VERSION)
+
     def publish_week(self, snapshot):
         key = 'publication:' + snapshot['week']
         previous = self.get(key, [])
@@ -459,7 +609,8 @@ class Bot:
                 return
             self.put(reservation, True)
         try:
-            result=self.tg.photo(self.chat_id, image, 'П2-23 · '+snapshot['week']+' · Время Ташкента', prior.get('message_id'))
+            result=self.tg.photo(self.chat_id, image, week_caption(snapshot, self.get('last_success')),
+                                 prior.get('message_id'))
         except TelegramRejected:
             if not prior.get('message_id'):
                 self.put(reservation, None)
@@ -479,7 +630,7 @@ class Bot:
             return
         lessons = [x for x in snapshot['lessons'] if x['date'] == tomorrow.isoformat()]
         if lessons:
-            self.send_once('tomorrow:' + tomorrow.isoformat(), '<b>П2‑23 · Завтра на учёбу</b>\n\n' + render_day(tomorrow.isoformat(), lessons))
+            self.send_once('tomorrow:' + tomorrow.isoformat(), render_day_reply(tomorrow, lessons, now))
 
     def failed_check(self, exc):
         self.last_error = type(exc).__name__
@@ -536,13 +687,93 @@ class Bot:
             raise DeliveryError('Publication failed: ' + type(errors[0]).__name__) from None
         self.daily_digest(now)
 
-    def day_messages(self, date):
+    def day_messages(self, date, now=None):
+        now = now or dt.datetime.now(TZ)
         monday = date - dt.timedelta(days=date.weekday())
         snapshot = self.get('week:' + monday.isoformat())
         if not snapshot or not snapshot['lessons']:
-            return ['Для этой даты подтверждённого расписания пока нет.\n' + SOURCE + '/timetable/']
+            label = 'сегодня' if date == now.date() else 'завтра' if date == now.date() + dt.timedelta(days=1) else date.strftime('%d.%m')
+            return [f'<b>П2‑23 · {label.capitalize()}</b>\n\nПодтверждённого расписания пока нет. '
+                    'EduPage ещё думает — редкий случай, когда вы с ним заняты одним и тем же.\n\n'
+                    f'<a href="{SOURCE}/timetable/">Проверить источник</a>']
         items = [x for x in snapshot['lessons'] if x['date'] == date.isoformat()]
-        return ['<b>П2‑23</b>\n\n' + render_day(date.isoformat(), items)]
+        return [render_day_reply(date, items, now)]
+
+    def next_message(self, now=None):
+        now = now or dt.datetime.now(TZ)
+        with self.lock:
+            rows = self.db.execute("SELECT value FROM kv WHERE key LIKE 'week:%'").fetchall()
+        lessons = []
+        for row in rows:
+            snapshot = json.loads(row[0])
+            lessons.extend(snapshot.get('lessons', []))
+        future_lessons = []
+        for item in lessons:
+            date = dt.date.fromisoformat(item['date'])
+            end = dt.datetime.combine(date, dt.time.fromisoformat(item['end']), TZ)
+            if end > now:
+                future_lessons.append(item)
+        if not future_lessons:
+            return ('<b>П2‑23 · Что дальше?</b>\n\nВ опубликованных неделях будущих пар нет. '
+                    'Либо свобода, либо EduPage ещё не родил следующую неделю — ставлю на второе.')
+        blocks = merge_adjacent_lessons(future_lessons)
+        item = min(blocks, key=lambda value: (value['date'], value['start'], value['subject']))
+        date = dt.date.fromisoformat(item['date'])
+        start = dt.datetime.combine(date, dt.time.fromisoformat(item['start']), TZ)
+        end = dt.datetime.combine(date, dt.time.fromisoformat(item['end']), TZ)
+        if start <= now < end:
+            heading = 'Сейчас идёт'
+            timing = f"До {item['end']} ещё {short_wait(end - now)}"
+        else:
+            heading = 'Следующая пара'
+            day_delta = (start.date() - now.date()).days
+            when = 'сегодня' if day_delta == 0 else 'завтра' if day_delta == 1 else DAYS[start.weekday()].lower()
+            timing = f"{when}, {start:%d.%m} в {item['start']} · через {short_wait(start - now)}"
+        pair_line = ''
+        if item.get('_pairs', 1) > 1:
+            count = item['_pairs']
+            pair_line = f"\n{count} {plural_ru(count, 'пара', 'пары', 'пар')} подряд"
+            if item.get('_break'):
+                pair_line += f" · перерыв {item['_break']} мин"
+        return (f'<b>П2‑23 · {heading}</b>\n{html.escape(timing)}\n\n{lesson_text(item)}{pair_line}\n\n'
+                '<i>Теперь опоздание хотя бы нельзя списать на нехватку информации.</i>')
+
+    def status_message(self, now=None):
+        now = now or dt.datetime.now(TZ)
+        success = self.get('last_success')
+        checked = None
+        if success:
+            try:
+                checked = dt.datetime.fromisoformat(success).astimezone(TZ)
+            except (TypeError, ValueError):
+                pass
+        if checked:
+            age = now - checked
+            checked_text = f'{checked:%d.%m в %H:%M} · {short_wait(age)} назад'
+        else:
+            checked_text = 'ещё не было'
+        source_problem = bool(self.last_error or self.get('source_error'))
+        delivery_problem = bool(self.get('delivery_attention'))
+        pending = any(value for key, value in self._items('candidate:') if value)
+        lines = [
+            '<b>П2‑23 · Статус бота</b>',
+            'Последняя проверка: ' + checked_text,
+            'Источник: ' + ('временно не отвечает' if source_problem else 'отвечает'),
+            'Изменения: ' + ('проверяю повторно' if pending else 'не замечены'),
+            'Доставка: ' + ('нужна проверка администратором' if delivery_problem else 'без ошибок'),
+        ]
+        if source_problem:
+            lines.append('\n<i>Показываю сохранённое расписание. Паниковать можно, но строго по тайм-слоту.</i>')
+        elif delivery_problem:
+            lines.append('\n<i>Расписание сохранилось, но Telegram сыграл в «доставил — не доставил».</i>')
+        else:
+            lines.append('\n<i>Жив, работаю, расписание проверяю. Кто-то в этой группе всё-таки стабилен.</i>')
+        return '\n'.join(lines)
+
+    def _items(self, prefix):
+        with self.lock:
+            rows = self.db.execute('SELECT key, value FROM kv WHERE key LIKE ?', (prefix + '%',)).fetchall()
+        return [(key, json.loads(value)) for key, value in rows]
 
     def handle(self, update):
         message = update.get('message', {})
@@ -563,21 +794,26 @@ class Bot:
         if time.time() - last < 5:
             return
         self.put('rate:' + str(sender), time.time())
-        today = dt.datetime.now(TZ).date()
+        now = dt.datetime.now(TZ)
+        today = now.date()
         if command in ('/today', '/tomorrow'):
-            messages = self.day_messages(today + dt.timedelta(days=command == '/tomorrow'))
+            messages = self.day_messages(today + dt.timedelta(days=command == '/tomorrow'), now)
+        elif command == '/next':
+            messages = [self.next_message(now)]
         elif command in ('/week', '/nextweek'):
             monday = today - dt.timedelta(days=today.weekday()) + dt.timedelta(days=7 if command == '/nextweek' else 0)
             snapshot = self.get('week:' + monday.isoformat())
             messages = render_week(snapshot) if snapshot else ['На эту неделю расписание пока не получено.']
         elif command == '/status':
-            success = self.get('last_success')
-            checked = dt.datetime.fromisoformat(success).astimezone(TZ).strftime('%d.%m %H:%M') if success else 'ещё не выполнена'
-            messages = ['<b>П2‑23 · Статус</b>\nПоследняя успешная проверка: ' + checked +
-                        ('\nИсточник временно недоступен. Показываю сохранённые данные.' if self.last_error or self.get('source_error') else '') +
-                        ('\nЕсть отправка с неподтверждённой доставкой; требуется проверка администратором.' if self.get('delivery_attention') else '')]
+            messages = [self.status_message(now)]
         elif command in ('/start', '/help'):
-            messages = ['<b>П2‑23 · Расписание</b>\n\n' + INTRO + '\n\n/today — сегодня\n/tomorrow — завтра\n/week — эта неделя\n/nextweek — следующая неделя\n/status — последняя проверка\n\nИзменения приходят после повторной проверки. Вечером — пары на завтра. Время Ташкента.\n' + SOURCE + '/timetable/']
+            messages = ['<b>П2‑23 · Уебот</b>\n\n' + INTRO +
+                        '\n\n/today — что терпим сегодня\n/tomorrow — к чему готовиться завтра\n'
+                        '/next — ближайшая пара и сколько до неё\n/week — неделя картинкой\n'
+                        '/nextweek — следующая неделя\n/status — жив ли бот и свежи ли данные\n\n'
+                        'Изменение публикую только после повторной проверки, чтобы одна галлюцинация '
+                        'EduPage не устроила миграцию всей группы. Вечером напоминаю пары на завтра. '
+                        f'Время Ташкента.\n<a href="{SOURCE}/timetable/">Открыть первоисточник</a>']
         else:
             return
         for i, response in enumerate(messages):
@@ -585,6 +821,7 @@ class Bot:
 
     def run(self, interval=300):
         self.username = self.tg.call('getMe')['username']
+        self.configure()
         webhook = self.tg.call('getWebhookInfo')
         if webhook.get('url'):
             raise RuntimeError('У бота установлен webhook. Не запускайте второй обработчик одновременно.')
@@ -635,6 +872,7 @@ def main():
     bot = Bot(Telegram(token), os.environ['TELEGRAM_CHAT_ID'], database,
               os.getenv('OWNER_ID', '0'))
     if args.once:
+        bot.configure()
         bot.check()
     else:
         bot.run(max(60, int(os.getenv('CHECK_INTERVAL_SECONDS', '300'))))

@@ -8,7 +8,7 @@ import unittest
 
 from bot import (Bot, SourceError, DeliveryError, TelegramRejected, EduPage, TZ,
                  IPv4HTTPSConnection, IPv4HTTPSHandler, digest, ipv4_connection,
-                 parse_week, render_week)
+                 parse_week, render_day_reply, render_week, week_caption)
 
 META = {'datefrom': '2026-09-07', 'text': '7–12 сентября', 'tt_num': '130'}
 
@@ -245,6 +245,45 @@ class ScheduleTests(unittest.TestCase):
         self.bot.daily_digest(self.now.replace(hour=20))
         self.assertEqual(len(self.api.messages), baseline + 1)
         self.assertIn('Вторник · 08.09', self.api.messages[-1][1])
+
+    def test_day_reply_has_summary_and_useful_timing(self):
+        items = [x for x in self.week['lessons'] if x['date'] == '2026-09-09']
+        result = render_day_reply(dt.date(2026, 9, 9), items,
+                                  dt.datetime(2026, 9, 9, 8, 10, tzinfo=TZ))
+        self.assertIn('4 пары · 09:00–16:30', result)
+        self.assertIn('До первой пары 50 мин', result)
+        self.assertIn('2 пары подряд · перерыв 15 мин', result)
+
+    def test_next_command_reports_countdown_and_room(self):
+        self.bot.put('week:' + self.week['week'], self.week)
+        result = self.bot.next_message(dt.datetime(2026, 9, 7, 8, 30, tzinfo=TZ))
+        self.assertIn('Следующая пара', result)
+        self.assertIn('через 30 мин', result)
+        self.assertIn('09:00–12:15', result)
+        self.assertIn('2 пары подряд', result)
+        self.assertIn('ауд. 313', result)
+
+    def test_status_is_diagnostic_but_human(self):
+        self.bot.put('last_success', self.now.isoformat())
+        result = self.bot.status_message(self.now + dt.timedelta(minutes=7))
+        self.assertIn('7 мин назад', result)
+        self.assertIn('Источник: отвечает', result)
+        self.assertIn('Доставка: без ошибок', result)
+        self.assertIn('Кто-то в этой группе', result)
+
+    def test_week_caption_contains_counts_and_checked_time(self):
+        result = week_caption(self.week, self.now.isoformat())
+        self.assertIn('07.09–12.09.2026', result)
+        self.assertIn('12 пар · 5 учебных дней', result)
+        self.assertIn('Проверено: 07.09 в 07:00', result)
+
+    def test_bot_profile_and_command_menu_are_configured_once(self):
+        self.bot.configure()
+        self.bot.configure()
+        methods = [method for method, _ in self.api.edits]
+        self.assertEqual(methods.count('setMyCommands'), 1)
+        self.assertEqual(methods.count('setMyDescription'), 1)
+        self.assertEqual(methods.count('setMyShortDescription'), 1)
 
 
 if __name__ == '__main__':

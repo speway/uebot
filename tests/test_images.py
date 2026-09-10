@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import unittest
 from PIL import Image
-from schedule_image import render_image
+from schedule_image import DESIGN_VERSION, _merge_day, render_image
 from api.telegram import make_reply
 from bot import TZ, Bot, parse_week
 from test_bot import META
@@ -15,9 +15,20 @@ class ImageTests(unittest.TestCase):
 
     def test_real_week_is_valid_telegram_image(self):
         im=Image.open(BytesIO(render_image(self.snapshot())))
-        self.assertGreaterEqual(im.width,1080)  # Grid expands to keep every time slot readable.
+        self.assertEqual(im.width,1080)
+        self.assertGreater(im.height,im.width)  # Portrait agenda stays readable on a phone.
         self.assertLess(im.width+im.height,10000)
         self.assertLess(im.height/im.width,20)
+
+    def test_consecutive_identical_pairs_are_one_visual_block(self):
+        monday=[x for x in self.snapshot()['lessons'] if x['date']=='2026-09-07']
+        merged=_merge_day(monday)
+        self.assertEqual(len(merged),1)
+        self.assertEqual((merged[0]['start'],merged[0]['end'],merged[0]['_pairs']),
+                         ('09:00','12:15',2))
+
+    def test_design_version_forces_existing_photos_to_refresh(self):
+        self.assertGreaterEqual(DESIGN_VERSION,3)
 
     def test_week_webhook_reuses_photo(self):
         now=dt.datetime.now(TZ);monday=now.date()-dt.timedelta(days=now.weekday())

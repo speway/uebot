@@ -5,9 +5,9 @@ import tempfile
 import unittest
 
 from api.source import authorized
-from api.telegram import make_reply, accepts_update
+from api.telegram import make_reply, accepts_update, state_is_stale, with_live_snapshots
 from bot import SourceError, TZ, parse_week
-from github_runner import GitStateBot, checked_recently, git, validate_relay_payload
+from github_runner import GitStateBot, checked_recently, check_with_confirmation, git, validate_relay_payload
 from test_bot import FakeTelegram, META
 
 
@@ -46,7 +46,8 @@ class HostingTests(unittest.TestCase):
                             'from': {'id': 42}, 'text': ' /week@msutf_p223_schedule_bot '}}, state, -100123)
         self.assertEqual(result['method'], 'sendPhoto')
         self.assertEqual(result['photo'], 'confirmed-photo')
-        self.assertIn('ожидаю повторную проверку', result['caption'])
+        self.assertIn('сейчас перепроверяю', result['caption'])
+        self.assertEqual(result['parse_mode'], 'HTML')
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -103,6 +104,45 @@ class HostingTests(unittest.TestCase):
     def test_webhook_personal_text_and_staleness_warning(self):
         result = make_reply({'update_id': 10, 'message': {'chat': {'id': -100123, 'type': 'supergroup'},
                                                         'from': {'id': 42}, 'text': '/help'}}, {'kv': {}}, -100123)
-        self.assertIn('для своих кентиков', result['text'])
-        self.assertIn('Данные давно не проверялись', result['text'])
+        self.assertIn('читаю EduPage за П2‑23', result['text'])
+        self.assertIn('Автопроверка задержалась', result['text'])
         self.assertEqual(result['chat_id'], -100123)
+
+    def test_next_command_is_accepted(self):
+        update = {'message': {'chat': {'id': -100123, 'type': 'supergroup'},
+                              'text': '/next@msutf_p223_schedule_bot'}}
+        self.assertTrue(accepts_update(update, -100123))
+
+    def test_stale_state_can_be_overlaid_with_live_schedule(self):
+        old = {'schema': 1, 'kv': {'last_success': '2026-09-10T00:00:00+05:00',
+                                   'delivery_attention': False}}
+        now = dt.datetime(2026, 9, 10, 1, 0, tzinfo=TZ)
+        self.assertTrue(state_is_stale(old, now))
+        fresh = with_live_snapshots(old, [{'week': '2026-09-14', 'lessons': []}], now)
+        self.assertFalse(state_is_stale(fresh, now))
+        self.assertIn('week:2026-09-14', fresh['kv'])
+        self.assertTrue(fresh['live'])
+
+    def test_detected_change_is_rechecked_inside_same_run(self):
+        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())
+        snapshot = parse_week(raw, META)
+        bot = GitStateBot(self.api, -100123, str(self.root / 'confirm.db'), self.state)
+        now = dt.datetime(2026, 9, 7, 7, tzinfo=TZ)
+        try:
+            bot.check([snapshot], now)
+            changed = json.loads(json.dumps(snapshot))
+            changed['lessons'][-1]['rooms'] = ['215']
+            calls = []
+
+            def fetcher():
+                calls.append(True)
+                return [changed]
+
+            waits = []
+            check_with_confirmation(bot, fetcher, waits.append, now)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(waits, [15])
+            self.assertIsNone(bot.get('candidate:week:' + snapshot['week']))
+            self.assertEqual(bot.get('week:' + snapshot['week'])['lessons'][-1]['rooms'], ['215'])
+        finally:
+            bot.db.close()
