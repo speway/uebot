@@ -22,7 +22,8 @@
       "status": "sent"
     },
     "sent:weekly:publication:2026-09-14:0:0": {
-      "status": "pending"
+      "message_id": 34358,
+      "status": "sent"
     },
     "source_error": null,
     "week:2026-09-07": {
