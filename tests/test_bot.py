@@ -7,7 +7,8 @@ import tempfile
 import unittest
 
 from bot import (Bot, SourceError, DeliveryError, TelegramRejected, EduPage, TZ,
-                 digest, ipv4_connection, parse_week, render_week)
+                 IPv4HTTPSConnection, IPv4HTTPSHandler, digest, ipv4_connection,
+                 parse_week, render_week)
 
 META = {'datefrom': '2026-09-07', 'text': '7–12 сентября', 'tt_num': '130'}
 
@@ -68,6 +69,18 @@ class ScheduleTests(unittest.TestCase):
         addresses.assert_called_once_with('example.test', 443, socket.AF_INET, socket.SOCK_STREAM)
         connection.settimeout.assert_called_once_with(12)
         connection.connect.assert_called_once_with(('192.0.2.1', 443))
+
+    def test_edupage_handler_supports_python_313(self):
+        from unittest.mock import Mock, patch
+        transport = IPv4HTTPSHandler()
+        if hasattr(transport, '_check_hostname'):
+            del transport._check_hostname
+        request = Mock()
+        with patch.object(transport, 'do_open', return_value='response') as open_request:
+            self.assertEqual(transport.https_open(request), 'response')
+        self.assertEqual(open_request.call_args.args, (IPv4HTTPSConnection, request))
+        self.assertIn('context', open_request.call_args.kwargs)
+        self.assertNotIn('check_hostname', open_request.call_args.kwargs)
 
     def test_photo_publish_updates_without_duplicate(self):
         from unittest.mock import Mock
