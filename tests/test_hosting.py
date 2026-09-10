@@ -7,11 +7,17 @@ import unittest
 from api.source import authorized
 from api.telegram import make_reply, accepts_update
 from bot import SourceError, TZ, parse_week
-from github_runner import GitStateBot, git, validate_relay_payload
+from github_runner import GitStateBot, checked_recently, git, validate_relay_payload
 from test_bot import FakeTelegram, META
 
 
 class HostingTests(unittest.TestCase):
+    def test_rapid_source_checks_are_skipped_but_normal_cron_is_not(self):
+        now = dt.datetime(2026, 9, 10, 21, 0, tzinfo=TZ)
+        self.assertTrue(checked_recently((now - dt.timedelta(minutes=2)).isoformat(), now))
+        self.assertFalse(checked_recently((now - dt.timedelta(minutes=5)).isoformat(), now))
+        self.assertFalse(checked_recently('not-a-date', now))
+
     def test_source_relay_requires_exact_nonempty_secret(self):
         self.assertTrue(authorized('expected', 'expected'))
         self.assertFalse(authorized('', ''))
