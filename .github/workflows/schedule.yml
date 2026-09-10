@@ -27,6 +27,9 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Run regression tests
         run: python -m unittest discover -s tests -q
+      - name: Smoke-test live EduPage access
+        if: github.event_name == 'push'
+        run: python bot.py --preview > /dev/null
       - name: Check setup
         id: setup
         env:
