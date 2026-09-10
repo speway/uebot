@@ -1,5 +1,6 @@
 {
   "kv": {
+    "delivery_attention": true,
     "sent:weekly:publication:2026-09-07:0:0": {
       "status": "pending"
     }
