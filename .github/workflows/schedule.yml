@@ -40,9 +40,11 @@ jobs:
             echo "::notice::Telegram secrets are not configured; publishing is disabled."
           fi
       - name: Read source and publish confirmed changes
-        if: steps.setup.outputs.ready == 'true'
+        if: github.event_name != 'push' && steps.setup.outputs.ready == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          SOURCE_RELAY_URL: https://uebot.vercel.app/api/source
           RECOVER_LAUNCH: ${{ inputs.recover_launch }}
         run: python github_runner.py
