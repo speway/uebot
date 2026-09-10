@@ -1,4 +1,5 @@
 """One scheduled run. Persist every send reservation to Git before Telegram."""
+import datetime as dt
 import json
 import os
 from pathlib import Path
@@ -7,13 +8,14 @@ import tempfile
 import urllib.error
 import urllib.request
 
-from bot import Bot, Telegram, DeliveryError, EduPage, SourceError
+from bot import Bot, Telegram, DeliveryError, EduPage, SourceError, TZ
 
 SOURCE_RELAY = 'https://uebot.vercel.app/api/source'
 STATE_BRANCH_VERCEL_CONFIG = json.dumps({
     '$schema': 'https://openapi.vercel.sh/vercel.json',
     'git': {'deploymentEnabled': False},
 }, indent=2) + '\n'
+MINIMUM_SOURCE_INTERVAL = dt.timedelta(minutes=4)
 
 
 def git(*args, cwd=None, allowed=(0,)):
@@ -64,6 +66,20 @@ def fetch_snapshots():
         if relay_error:
             raise SourceError(str(relay_error) + '; direct source: ' + str(direct_error)) from None
         raise
+
+
+def checked_recently(value, now=None):
+    """Avoid hammering EduPage when several code pushes queue together."""
+    if not value:
+        return False
+    try:
+        checked = dt.datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return False
+    if checked.tzinfo is None:
+        return False
+    age = (now or dt.datetime.now(TZ)) - checked.astimezone(TZ)
+    return dt.timedelta(0) <= age < MINIMUM_SOURCE_INTERVAL
 
 
 class GitStateBot(Bot):
@@ -131,6 +147,11 @@ def main():
                     if not bot.get('image:' + week):
                         bot.put(key, None)
             bot.put('delivery_attention', False)
+        elif checked_recently(bot.get('last_success')):
+            # Push bursts are serialized but can still reach the source only
+            # seconds apart.  A skipped run is successful; the next cron run
+            # performs the normal check once the minimum interval has passed.
+            return
         try:
             bot.check(fetch_snapshots())
         except DeliveryError:
