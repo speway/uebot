@@ -64,7 +64,7 @@ class EduPage:
                     raise SourceError('EduPage HTTP ' + str(exc.code)) from None
                 if attempt == 2:
                     reason = getattr(exc, 'reason', exc)
-                    raise SourceError('EduPage connection: ' + type(reason).__name__) from None
+                    raise SourceError('EduPage connection: ' + type(reason).__name__ + ': ' + str(reason)) from None
                 time.sleep(2 ** attempt)
 
     def connect(self):
