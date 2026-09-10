@@ -4,13 +4,27 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from api.source import authorized
 from api.telegram import make_reply, accepts_update
-from bot import TZ, parse_week
-from github_runner import GitStateBot, git
+from bot import SourceError, TZ, parse_week
+from github_runner import GitStateBot, git, validate_relay_payload
 from test_bot import FakeTelegram, META
 
 
 class HostingTests(unittest.TestCase):
+    def test_source_relay_requires_exact_nonempty_secret(self):
+        self.assertTrue(authorized('expected', 'expected'))
+        self.assertFalse(authorized('', ''))
+        self.assertFalse(authorized('expected', 'different'))
+
+    def test_source_relay_payload_is_strictly_validated(self):
+        valid = {'schema': 1, 'snapshots': [{'week': '2026-09-07', 'lessons': []}]}
+        self.assertEqual(validate_relay_payload(valid), valid['snapshots'])
+        for invalid in ({}, {'schema': 2, 'snapshots': []}, {'schema': 1, 'snapshots': []},
+                        {'schema': 1, 'snapshots': [{'week': 1, 'lessons': []}]}):
+            with self.assertRaises(SourceError):
+                validate_relay_payload(invalid)
+
     def test_unrelated_updates_are_ignored_before_fetch(self):
         for message in ({}, {'text': 'привет'}, {'text': '/today@another_bot'},
                         {'text': '/unknown'}, {'photo': [{}]}, {'text': '   '}):
