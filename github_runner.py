@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from bot import Bot, Telegram
+from bot import Bot, Telegram, DeliveryError
 
 
 def git(*args, cwd=None, allowed=(0,)):
@@ -38,7 +38,7 @@ class GitStateBot(Bot):
         # This file contains only published university lessons and check status.
         public = {key: value for key, value in state.items() if key.startswith('week:') or
                   key in ('last_success', 'source_error', 'delivery_attention')}
-        public.update({key: {'file_id':value['file_id']} for key,value in state.items() if key.startswith('image:')})
+        public.update({key: {'file_id':value['file_id']} for key,value in state.items() if key.startswith('image:') and value})
         public['pending_confirmation'] = any(value for key, value in state.items() if key.startswith('candidate:'))
         (self.state_dir / 'schedule.json').write_text(json.dumps({'schema': 1, 'kv': public}, ensure_ascii=False, sort_keys=True))
         git('add', 'state.json', 'schedule.json', cwd=self.state_dir)
@@ -64,11 +64,28 @@ def main():
         git('config', 'user.name', 'github-actions[bot]', cwd=state_dir)
         git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com', cwd=state_dir)
         bot = GitStateBot(Telegram(token), chat_id, str(Path(temporary) / 'state.sqlite3'), state_dir, exists)
+        if os.getenv('RECOVER_LAUNCH') == 'true':
+            # Explicit one-time operator recovery after the revoked-token launch.
+            # Leave all confirmed message IDs and successful publication records intact.
+            with bot.lock:
+                reservations = [(key, json.loads(value)) for key, value in bot.db.execute('SELECT key, value FROM kv')]
+            for key, value in reservations:
+                if key.startswith('sent:weekly:') and value and value.get('status') == 'pending':
+                    bot.put(key, None)
+                if key.startswith('image-send:') and value:
+                    week = key.split(':')[1]
+                    if not bot.get('image:' + week):
+                        bot.put(key, None)
+            bot.put('delivery_attention', False)
         try:
             bot.check()
+        except DeliveryError:
+            # Publication failures must never mark a successful source fetch as failed.
+            raise
         except Exception as exc:
             bot.failed_check(exc)
-            raise RuntimeError('Check failed: ' + type(exc).__name__) from None
+            detail = str(exc) if type(exc).__name__ == 'SourceError' else type(exc).__name__
+            raise RuntimeError('Check failed: ' + detail) from None
 
 
 if __name__ == '__main__':
