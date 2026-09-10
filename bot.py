@@ -7,12 +7,14 @@ import datetime as dt
 import fcntl
 import hashlib
 import html
+import http.client
 import http.cookiejar
 import json
 import logging
 import os
 from pathlib import Path
 import re
+import socket
 import sqlite3
 import threading
 import time
@@ -48,9 +50,48 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
+def ipv4_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
+    """Open one TCP connection without selecting EduPage's unreachable IPv6 route."""
+    host, port = address
+    last_error = None
+    for family, socktype, proto, _, socket_address in socket.getaddrinfo(
+            host, port, socket.AF_INET, socket.SOCK_STREAM):
+        connection = None
+        try:
+            connection = socket.socket(family, socktype, proto)
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                connection.settimeout(timeout)
+            if source_address:
+                connection.bind(source_address)
+            connection.connect(socket_address)
+            return connection
+        except OSError as exc:
+            last_error = exc
+            if connection is not None:
+                connection.close()
+    if last_error is not None:
+        raise last_error
+    raise OSError('EduPage has no IPv4 address')
+
+
+class IPv4HTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = ipv4_connection
+
+
+class IPv4HTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, request):
+        return self.do_open(IPv4HTTPSConnection, request, context=self._context,
+                            check_hostname=self._check_hostname)
+
+
 class EduPage:
     def __init__(self):
-        self.http = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        # EduPage advertises IPv6, while hosted runners currently have no IPv6 route.
+        # Keep this transport scoped to EduPage; Telegram and GitHub retain defaults.
+        self.http = urllib.request.build_opener(
+            IPv4HTTPSHandler(), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         self.gsh = ''
 
     def read(self, request):
