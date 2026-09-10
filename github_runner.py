@@ -4,8 +4,12 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import urllib.error
+import urllib.request
 
-from bot import Bot, Telegram, DeliveryError
+from bot import Bot, Telegram, DeliveryError, EduPage, SourceError
+
+SOURCE_RELAY = 'https://uebot.vercel.app/api/source'
 
 
 def git(*args, cwd=None, allowed=(0,)):
@@ -14,6 +18,48 @@ def git(*args, cwd=None, allowed=(0,)):
         # Credentials can occur in remote errors; never print raw command output.
         raise RuntimeError('Git operation failed: ' + args[0])
     return result
+
+
+def validate_relay_payload(payload):
+    if payload.get('schema') != 1 or not isinstance(payload.get('snapshots'), list):
+        raise SourceError('Schedule relay returned invalid data')
+    snapshots = payload['snapshots']
+    if not 1 <= len(snapshots) <= 4:
+        raise SourceError('Schedule relay returned an invalid week count')
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get('week'), str) or \
+                not isinstance(snapshot.get('lessons'), list):
+            raise SourceError('Schedule relay returned an invalid timetable')
+    return snapshots
+
+
+def fetch_snapshots():
+    """Prefer Vercel's network path, then fall back to the runner's direct path."""
+    url = os.getenv('SOURCE_RELAY_URL', '')
+    secret = os.getenv('WEBHOOK_SECRET', '')
+    relay_error = None
+    if url and secret:
+        if url != SOURCE_RELAY:
+            raise RuntimeError('Unexpected schedule relay URL')
+        request = urllib.request.Request(url, headers={'X-Schedule-Source-Secret': secret,
+                                                       'User-Agent': 'P223ScheduleBot/1.0'})
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                data = response.read(2097153)
+            if len(data) > 2097152:
+                raise SourceError('Schedule relay response is too large')
+            return validate_relay_payload(json.loads(data))
+        except urllib.error.HTTPError as exc:
+            relay_error = SourceError('Schedule relay HTTP ' + str(exc.code))
+        except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError, TypeError) as exc:
+            reason = getattr(exc, 'reason', exc)
+            relay_error = SourceError('Schedule relay connection: ' + type(reason).__name__)
+    try:
+        return EduPage().fetch()
+    except SourceError as direct_error:
+        if relay_error:
+            raise SourceError(str(relay_error) + '; direct source: ' + str(direct_error)) from None
+        raise
 
 
 class GitStateBot(Bot):
@@ -78,7 +124,7 @@ def main():
                         bot.put(key, None)
             bot.put('delivery_attention', False)
         try:
-            bot.check()
+            bot.check(fetch_snapshots())
         except DeliveryError:
             # Publication failures must never mark a successful source fetch as failed.
             raise
