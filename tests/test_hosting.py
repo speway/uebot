@@ -70,6 +70,8 @@ class HostingTests(unittest.TestCase):
             public = json.loads((self.state / 'schedule.json').read_text())
             self.assertIn('week:2026-09-07', public['kv'])
             self.assertFalse(any(k.startswith('sent:') for k in public['kv']))
+            state_vercel = json.loads((self.state / 'vercel.json').read_text())
+            self.assertIs(state_vercel['git']['deploymentEnabled'], False)
         finally:
             restored.db.close()
 
