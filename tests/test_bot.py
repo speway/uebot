@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from bot import Bot, SourceError, TZ, digest, parse_week, render_week
+from bot import Bot, SourceError, DeliveryError, TelegramRejected, EduPage, TZ, digest, parse_week, render_week
 
 META = {'datefrom': '2026-09-07', 'text': '7–12 сентября', 'tt_num': '130'}
 
@@ -28,6 +28,34 @@ class FakeTelegram:
 
 
 class ScheduleTests(unittest.TestCase):
+    def test_schedule_available_when_publication_fails(self):
+        self.api.fail = True
+        with self.assertRaises(DeliveryError):
+            self.bot.check([self.week], self.now)
+        self.assertEqual(self.bot.get('week:' + self.week['week'])['lessons'], self.week['lessons'])
+        self.assertEqual(self.bot.get('last_success'), self.now.isoformat())
+        self.assertFalse(self.bot.get('source_error'))
+
+    def test_rejected_request_can_be_retried_after_repair(self):
+        from unittest.mock import Mock
+        self.api.send = Mock(side_effect=TelegramRejected('Telegram HTTP 401'))
+        with self.assertRaises(TelegramRejected):
+            self.bot.send_once('repair', 'schedule')
+        self.api.send.side_effect = None
+        self.api.send.return_value = {'message_id': 77}
+        self.assertEqual(self.bot.send_once('repair', 'schedule'), 77)
+
+    def test_edupage_retries_transient_read_errors(self):
+        from unittest.mock import Mock, patch, MagicMock
+        from urllib.error import URLError
+        source = EduPage()
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'published'
+        source.http.open = Mock(side_effect=[URLError('timed out'), response])
+        with patch('bot.time.sleep'):
+            self.assertEqual(source.read('https://msu2006.edupage.org/timetable/'), b'published')
+        self.assertEqual(source.http.open.call_count, 2)
+
     def test_photo_publish_updates_without_duplicate(self):
         from unittest.mock import Mock
         self.api.photo = Mock(return_value={'message_id': 201, 'photo': [{'file_id': 'photo1'}]})
