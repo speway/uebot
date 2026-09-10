@@ -11,7 +11,9 @@
         "message_id": null
       }
     ],
-    "sent:weekly:publication:2026-09-07:0:0": null,
+    "sent:weekly:publication:2026-09-07:0:0": {
+      "status": "pending"
+    },
     "source_error": null,
     "week:2026-09-07": {
       "class_name": "Психология 4 курс П2-23",
