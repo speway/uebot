@@ -32,6 +32,14 @@ class SourceError(Exception):
     pass
 
 
+class DeliveryError(RuntimeError):
+    """The source was checked, but publication needs attention."""
+
+
+class TelegramRejected(DeliveryError):
+    """Telegram explicitly refused a request; it did not deliver it."""
+
+
 def normalized(value):
     return re.sub(r'\s+', '', str(value)).upper().replace('‑', '-').replace('–', '-')
 
@@ -45,8 +53,22 @@ class EduPage:
         self.http = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         self.gsh = ''
 
+    def read(self, request):
+        # These endpoints only read published timetable data, so retries are safe.
+        for attempt in range(3):
+            try:
+                with self.http.open(request, timeout=25) as response:
+                    return response.read()
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+                if isinstance(exc, urllib.error.HTTPError) and exc.code < 500 and exc.code != 429:
+                    raise SourceError('EduPage HTTP ' + str(exc.code)) from None
+                if attempt == 2:
+                    reason = getattr(exc, 'reason', exc)
+                    raise SourceError('EduPage connection: ' + type(reason).__name__) from None
+                time.sleep(2 ** attempt)
+
     def connect(self):
-        page = self.http.open(SOURCE + '/timetable/', timeout=35).read().decode()
+        page = self.read(SOURCE + '/timetable/').decode()
         match = re.search(r'gsechash\s*[=:]\s*[\x22\x27]([^\x22\x27]+)', page)
         if not match:
             raise SourceError('EduPage: изменился формат страницы')
@@ -57,7 +79,7 @@ class EduPage:
             f'{SOURCE}/timetable/server/{module}.js?__func={function}',
             data=json.dumps({'__args': [None, *args], '__gsh': self.gsh}).encode(),
             headers={'Content-Type': 'application/json', 'User-Agent': 'P223ScheduleBot/1.0'})
-        response = json.loads(self.http.open(request, timeout=45).read())
+        response = json.loads(self.read(request))
         if not isinstance(response, dict) or 'r' not in response or response.get('reload') or response.get('e'):
             raise SourceError('EduPage: ответ не содержит подтверждённого расписания')
         return response['r']
@@ -274,11 +296,13 @@ class Telegram:
                 except (ValueError, UnicodeError):
                     pass
             # Never log request URLs: they contain the token.
-            raise RuntimeError('Telegram HTTP ' + str(exc.code)) from None
+            if 400 <= exc.code < 500:
+                raise TelegramRejected('Telegram HTTP ' + str(exc.code)) from None
+            raise DeliveryError('Telegram HTTP ' + str(exc.code)) from None
         except Exception:
-            raise RuntimeError('Telegram: результат запроса неизвестен; автоматический повтор отправки отключён') from None
+            raise DeliveryError('Telegram: результат запроса неизвестен; автоматический повтор отправки отключён') from None
         if not answer.get('ok'):
-            raise RuntimeError('Telegram отклонил запрос')
+            raise TelegramRejected('Telegram отклонил запрос')
         return answer['result']
 
     def photo(self, chat_id, image, caption, message_id=None):
@@ -299,9 +323,13 @@ class Telegram:
         request=urllib.request.Request('https://api.telegram.org/bot' + self.token + '/' + method, data=b''.join(chunks), headers={'Content-Type': 'multipart/form-data; boundary='+boundary})
         try:
             with urllib.request.urlopen(request, timeout=60) as response: result=json.load(response)
+        except urllib.error.HTTPError as exc:
+            if 400 <= exc.code < 500:
+                raise TelegramRejected('Telegram photo HTTP ' + str(exc.code)) from None
+            raise DeliveryError('Telegram photo HTTP ' + str(exc.code)) from None
         except Exception:
-            raise RuntimeError('Telegram photo delivery failed') from None
-        if not result.get('ok'): raise RuntimeError('Telegram rejected photo')
+            raise DeliveryError('Telegram photo delivery failed') from None
+        if not result.get('ok'): raise TelegramRejected('Telegram rejected photo')
         return result['result']
 
     def send(self, chat_id, text, **extra):
@@ -340,6 +368,9 @@ class Bot:
         try:
             quiet = dt.datetime.now(TZ).hour < 7 or dt.datetime.now(TZ).hour >= 23
             result = self.tg.send(self.chat_id if chat_id is None else chat_id, text, disable_notification=quiet)
+        except TelegramRejected:
+            self.put('sent:' + key, None)
+            raise
         except Exception:
             self.put('delivery_attention', True)
             raise
@@ -385,6 +416,10 @@ class Bot:
             self.put(reservation, True)
         try:
             result=self.tg.photo(self.chat_id, image, 'П2-23 · '+snapshot['week']+' · Время Ташкента', prior.get('message_id'))
+        except TelegramRejected:
+            if not prior.get('message_id'):
+                self.put(reservation, None)
+            raise
         except Exception:
             self.put('delivery_attention', True)
             raise
@@ -413,6 +448,7 @@ class Bot:
     def check(self, snapshots=None, now=None):
         now = now or dt.datetime.now(TZ)
         snapshots = snapshots if snapshots is not None else EduPage().fetch(now.date())
+        ready = []
         for snapshot in snapshots:
             key = 'week:' + snapshot['week']
             old = self.get(key)
@@ -428,17 +464,32 @@ class Bot:
                     self.put('candidate:' + key, fingerprint)
                     continue  # Require the same change in two independent successful checks.
                 messages = describe_changes(old['lessons'], lessons, now.date().isoformat())
-                self.publish_week(snapshot)
-                for i, message in enumerate(messages):
-                    self.send_once(f'change:{key}:{snapshot["revision"]}:{fingerprint}:{i}', message)
-            elif not old and lessons:
-                self.publish_week(snapshot)
-            self.publish_image(snapshot)
+                outbox = self.get('outbox:' + key, [])
+                outbox.extend({'key': f'change:{key}:{snapshot["revision"]}:{fingerprint}:{i}', 'text': message}
+                              for i, message in enumerate(messages))
+                self.put('outbox:' + key, outbox)
+            # Commands must keep working even if Telegram publication fails.
             self.put(key, snapshot)
             self.put('candidate:' + key, None)
+            ready.append(snapshot)
         self.put('last_success', now.isoformat())
         self.put('source_error', None)
         self.last_error = ''
+        errors = []
+        for snapshot in ready:
+            key = 'week:' + snapshot['week']
+            try:
+                if snapshot['lessons']:
+                    self.publish_week(snapshot)
+                self.publish_image(snapshot)
+                for item in self.get('outbox:' + key, []):
+                    self.send_once(item['key'], item['text'])
+                self.put('outbox:' + key, [])
+            except Exception as exc:
+                errors.append(exc)
+        if errors:
+            self.put('delivery_attention', True)
+            raise DeliveryError('Publication failed: ' + type(errors[0]).__name__) from None
         self.daily_digest(now)
 
     def day_messages(self, date):
