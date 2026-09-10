@@ -82,8 +82,11 @@ class IPv4HTTPSConnection(http.client.HTTPSConnection):
 
 class IPv4HTTPSHandler(urllib.request.HTTPSHandler):
     def https_open(self, request):
-        return self.do_open(IPv4HTTPSConnection, request, context=self._context,
-                            check_hostname=self._check_hostname)
+        options = {'context': self._context}
+        # Python 3.13 removed HTTPSHandler._check_hostname.
+        if hasattr(self, '_check_hostname'):
+            options['check_hostname'] = self._check_hostname
+        return self.do_open(IPv4HTTPSConnection, request, **options)
 
 
 class EduPage:
