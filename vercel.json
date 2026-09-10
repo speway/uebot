@@ -1,7 +1,16 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
+  "git": {
+    "deploymentEnabled": {
+      "state": false
+    }
+  },
   "functions": {
     "api/telegram.py": {
+      "maxDuration": 60
+    },
+    "api/source.py": {
       "maxDuration": 60
     }
   }
