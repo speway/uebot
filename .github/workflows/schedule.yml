@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: '3-58/5 * * * *'
   workflow_dispatch:
+    inputs:
+      recover_launch:
+        description: Recover unconfirmed launch publications after token replacement
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -39,4 +44,5 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RECOVER_LAUNCH: ${{ inputs.recover_launch }}
         run: python github_runner.py
