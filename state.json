@@ -3,7 +3,7 @@
     "candidate:week:2026-09-07": null,
     "candidate:week:2026-09-14": null,
     "delivery_attention": false,
-    "image-send:2026-09-07:0:847c74632daff9c332021dbe18a3e88b1b6e287a4c8a3065230f22ecdd03b350": null,
+    "image-send:2026-09-07:0:847c74632daff9c332021dbe18a3e88b1b6e287a4c8a3065230f22ecdd03b350": true,
     "last_success": "2026-09-10T20:31:01.416486+05:00",
     "publication:2026-09-07": [
       {
