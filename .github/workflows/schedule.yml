@@ -27,9 +27,6 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Run regression tests
         run: python -m unittest discover -s tests -q
-      - name: Smoke-test live EduPage access
-        if: github.event_name == 'push'
-        run: python bot.py --preview > /dev/null
       - name: Check setup
         id: setup
         env:
@@ -43,7 +40,7 @@ jobs:
             echo "::notice::Telegram secrets are not configured; publishing is disabled."
           fi
       - name: Read source and publish confirmed changes
-        if: github.event_name != 'push' && steps.setup.outputs.ready == 'true'
+        if: steps.setup.outputs.ready == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
