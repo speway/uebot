@@ -47,4 +47,14 @@ jobs:
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
           SOURCE_RELAY_URL: https://uebot.vercel.app/api/source
           RECOVER_LAUNCH: ${{ inputs.recover_launch }}
-        run: python github_runner.py
+        run: |
+          for attempt in 1 2; do
+            if python github_runner.py; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 2 ]; then
+              echo "::warning::Timetable check failed; retrying once after 90 seconds."
+              sleep 90
+            fi
+          done
+          exit 1
