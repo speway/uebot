@@ -1,6 +1,12 @@
 {
   "kv": {
     "delivery_attention": true,
+    "publication:2026-09-07": [
+      {
+        "hash": "458e4c52a2478d687b78c19fb5100952c8b536e86436f1a852533846a558d832",
+        "message_id": null
+      }
+    ],
     "sent:weekly:publication:2026-09-07:0:0": {
       "status": "pending"
     },
