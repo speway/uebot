@@ -2,10 +2,12 @@ import copy
 import datetime as dt
 import json
 from pathlib import Path
+import socket
 import tempfile
 import unittest
 
-from bot import Bot, SourceError, DeliveryError, TelegramRejected, EduPage, TZ, digest, parse_week, render_week
+from bot import (Bot, SourceError, DeliveryError, TelegramRejected, EduPage, TZ,
+                 digest, ipv4_connection, parse_week, render_week)
 
 META = {'datefrom': '2026-09-07', 'text': '7–12 сентября', 'tt_num': '130'}
 
@@ -55,6 +57,17 @@ class ScheduleTests(unittest.TestCase):
         with patch('bot.time.sleep'):
             self.assertEqual(source.read('https://msu2006.edupage.org/timetable/'), b'published')
         self.assertEqual(source.http.open.call_count, 2)
+
+    def test_edupage_transport_selects_only_ipv4(self):
+        from unittest.mock import Mock, patch
+        connection = Mock()
+        with patch('bot.socket.getaddrinfo', return_value=[
+                (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('192.0.2.1', 443))]) as addresses, \
+                patch('bot.socket.socket', return_value=connection):
+            self.assertIs(ipv4_connection(('example.test', 443), timeout=12), connection)
+        addresses.assert_called_once_with('example.test', 443, socket.AF_INET, socket.SOCK_STREAM)
+        connection.settimeout.assert_called_once_with(12)
+        connection.connect.assert_called_once_with(('192.0.2.1', 443))
 
     def test_photo_publish_updates_without_duplicate(self):
         from unittest.mock import Mock
