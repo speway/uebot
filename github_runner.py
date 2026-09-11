@@ -19,6 +19,7 @@ STATE_BRANCH_VERCEL_CONFIG = json.dumps({
 MINIMUM_SOURCE_INTERVAL = dt.timedelta(minutes=4)
 CONFIRMATION_RECHECK_SECONDS = 15
 WEEK_MASK_STATE_VERSION = 2
+PUBLICATION_STYLE_VERSION = 4
 KNOWN_FALSE_WEEK = '2026-09-14'
 KNOWN_FALSE_WEEK_DIGEST = '90e022f57812e01b234e8a46e7b25ffba1db027a467ff7d9df1b2dd6d95fdac8'
 
@@ -145,6 +146,21 @@ def repair_stored_week_mask_bug(bot, now=None):
     return True
 
 
+def refresh_stored_publications(bot, now=None):
+    """Refresh current cards after a copy or image design release, without source access."""
+    if bot.get('publication_style_version', 0) >= PUBLICATION_STYLE_VERSION:
+        return False
+    today = (now or dt.datetime.now(TZ)).date()
+    monday = today - dt.timedelta(days=today.weekday())
+    for offset in (0, 7):
+        snapshot = bot.get('week:' + (monday + dt.timedelta(days=offset)).isoformat())
+        if snapshot:
+            bot.publish_week(snapshot)
+            bot.publish_image(snapshot)
+    bot.put('publication_style_version', PUBLICATION_STYLE_VERSION)
+    return True
+
+
 class GitStateBot(Bot):
     def __init__(self, telegram, chat_id, database, state_dir, require_existing=False):
         super().__init__(telegram, chat_id, database)
@@ -200,6 +216,7 @@ def main():
         bot.configure()
         try:
             repair_stored_week_mask_bug(bot)
+            refresh_stored_publications(bot)
         except DeliveryError:
             bot.put('delivery_attention', True)
             raise

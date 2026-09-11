@@ -8,8 +8,8 @@ from api.source import authorized
 from api.telegram import make_reply, accepts_update, state_is_stale, with_live_snapshots
 from bot import SourceError, TZ, parse_week
 from github_runner import (GitStateBot, KNOWN_FALSE_WEEK_DIGEST, checked_recently,
-                           check_with_confirmation, git, repair_stored_week_mask_bug,
-                           validate_relay_payload)
+                           check_with_confirmation, git, refresh_stored_publications,
+                           repair_stored_week_mask_bug, validate_relay_payload)
 from test_bot import FakeTelegram, META
 
 
@@ -145,6 +145,11 @@ class HostingTests(unittest.TestCase):
             self.assertTrue(any('Исправил свой косяк' in text for _, text in self.api.messages))
             self.assertFalse(repair_stored_week_mask_bug(
                 bot, dt.datetime(2026, 9, 11, 2, 1, tzinfo=TZ)))
+            self.assertTrue(refresh_stored_publications(
+                bot, dt.datetime(2026, 9, 11, 2, 1, tzinfo=TZ)))
+            self.assertFalse(refresh_stored_publications(
+                bot, dt.datetime(2026, 9, 11, 2, 2, tzinfo=TZ)))
+            self.assertEqual(self.api.photo.call_count, 2)
         finally:
             bot.db.close()
 

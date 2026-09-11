@@ -7,7 +7,7 @@ import re
 from PIL import Image, ImageDraw, ImageFont
 
 
-DESIGN_VERSION = 3
+DESIGN_VERSION = 4
 WIDTH = 1080
 MARGIN = 54
 
