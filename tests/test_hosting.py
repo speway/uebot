@@ -7,7 +7,9 @@ import unittest
 from api.source import authorized
 from api.telegram import make_reply, accepts_update, state_is_stale, with_live_snapshots
 from bot import SourceError, TZ, parse_week
-from github_runner import GitStateBot, checked_recently, check_with_confirmation, git, validate_relay_payload
+from github_runner import (GitStateBot, KNOWN_FALSE_WEEK_DIGEST, checked_recently,
+                           check_with_confirmation, git, repair_stored_week_mask_bug,
+                           validate_relay_payload)
 from test_bot import FakeTelegram, META
 
 
@@ -46,8 +48,23 @@ class HostingTests(unittest.TestCase):
                             'from': {'id': 42}, 'text': ' /week@msutf_p223_schedule_bot '}}, state, -100123)
         self.assertEqual(result['method'], 'sendPhoto')
         self.assertEqual(result['photo'], 'confirmed-photo')
-        self.assertIn('сейчас перепроверяю', result['caption'])
+        self.assertIn('перепроверяю', result['caption'])
         self.assertEqual(result['parse_mode'], 'HTML')
+
+    def test_live_overlay_never_reuses_a_possibly_stale_photo(self):
+        now = dt.datetime.now(TZ)
+        monday = now.date() - dt.timedelta(days=now.weekday())
+        state = {'live': True, 'kv': {
+            'last_success': now.isoformat(),
+            'week:' + monday.isoformat(): {'week': monday.isoformat(), 'lessons': []},
+            'image:' + monday.isoformat(): {'file_id': 'stale-photo'},
+        }}
+        result = make_reply({'update_id': 102, 'message': {
+            'chat': {'id': -100123, 'type': 'supergroup'},
+            'from': {'id': 42}, 'text': '/week',
+        }}, state, -100123)
+        self.assertEqual(result['method'], 'sendMessage')
+        self.assertIn('ебучие лохи', result['text'])
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -95,6 +112,41 @@ class HostingTests(unittest.TestCase):
     def test_missing_existing_state_never_resets_baseline(self):
         with self.assertRaises(RuntimeError):
             GitStateBot(self.api, -100123, str(self.root / 'missing.db'), self.state, True)
+
+    def test_persisted_false_next_week_is_repaired_without_source_access(self):
+        from unittest.mock import Mock
+        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())
+        current = parse_week(raw, META)
+        snapshot = json.loads(json.dumps(current))
+        snapshot['week'] = '2026-09-14'
+        snapshot['source_title'] = '14 - 19 сентября'
+        for lesson in snapshot['lessons']:
+            lesson['date'] = (dt.date.fromisoformat(lesson['date']) + dt.timedelta(days=7)).isoformat()
+        from bot import digest
+        self.assertEqual(digest(snapshot['lessons']), KNOWN_FALSE_WEEK_DIGEST)
+        self.api.photo = Mock(side_effect=[
+            {'message_id': 77, 'photo': [{'file_id': 'fixed-photo'}]},
+            {'message_id': 70, 'photo': [{'file_id': 'current-photo'}]},
+        ])
+        bot = GitStateBot(self.api, -100123, str(self.root / 'repair.db'), self.state)
+        try:
+            bot.put('week:2026-09-07', current)
+            bot.put('publication:2026-09-07', [{'message_id': 50, 'hash': 'old'}])
+            bot.put('image:2026-09-07', {'message_id': 70, 'hash': 'old', 'file_id': 'old-current'})
+            bot.put('week:2026-09-14', snapshot)
+            bot.put('publication:2026-09-14', [{'message_id': 55, 'hash': 'old'}])
+            bot.put('image:2026-09-14', {'message_id': 77, 'hash': 'old', 'file_id': 'wrong-photo'})
+            self.assertTrue(repair_stored_week_mask_bug(
+                bot, dt.datetime(2026, 9, 11, 2, 0, tzinfo=TZ)))
+            self.assertEqual(bot.get('week:2026-09-14')['lessons'], [])
+            self.assertEqual(bot.get('image:2026-09-07')['file_id'], 'current-photo')
+            self.assertEqual(bot.get('image:2026-09-14')['file_id'], 'fixed-photo')
+            self.assertEqual([call.args[-1] for call in self.api.photo.call_args_list], [77, 70])
+            self.assertTrue(any('Исправил свой косяк' in text for _, text in self.api.messages))
+            self.assertFalse(repair_stored_week_mask_bug(
+                bot, dt.datetime(2026, 9, 11, 2, 1, tzinfo=TZ)))
+        finally:
+            bot.db.close()
 
     def test_webhook_does_not_reply_to_another_group(self):
         result = make_reply({'update_id': 9, 'message': {'chat': {'id': -999, 'type': 'supergroup'},

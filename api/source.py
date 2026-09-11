@@ -31,9 +31,10 @@ class handler(BaseHTTPRequestHandler):
         if not authorized(secret, supplied):
             return self.respond(403, {'ok': False})
         try:
-            snapshots = EduPage().fetch()
+            # Fail fast enough for GitHub to use its direct fallback instead of
+            # spending the whole serverless execution window on a blocked socket.
+            snapshots = EduPage(timeout=12, attempts=1).fetch()
             self.respond(200, {'schema': 1, 'fetched_at': dt.datetime.now(TZ).isoformat(),
                                'snapshots': snapshots})
         except SourceError:
             self.respond(502, {'ok': False, 'error': 'source_unavailable'})
-

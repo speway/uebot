@@ -11,8 +11,8 @@ from bot import Bot, EduPage, TZ, week_caption
 
 
 STALE_AFTER = dt.timedelta(minutes=30)
-STALE_WARNING = ('Автопроверка задержалась. Показываю сохранённое — сверься с EduPage, '
-                 'если идёшь ва-банк.')
+STALE_WARNING = ('Автопроверка задержалась. Показываю сохранённое — перед выходом сверься с EduPage, '
+                 'а то коллективно припрутся не туда только особо одарённые.')
 
 
 def accepts_update(update, chat_id):
@@ -77,25 +77,28 @@ def make_reply(update, state, chat_id):
             return {'ok': True}
         response = collector.messages[0]
         if len(collector.messages) > 1:
-            response['text'] = '<b>П2‑23 · Расписание</b>\nНа эту неделю много занятий. Используй /today или /tomorrow либо открой полное расписание: https://msu2006.edupage.org/timetable/'
+            response['text'] = ('<b>П2‑23 · Расписание</b>\nВ одну телеграмную простыню эта хуйня не влезает. '
+                                'Используй /today или /tomorrow либо открой полное расписание: '
+                                'https://msu2006.edupage.org/timetable/')
         checked = state.get('kv', {}).get('last_success')
         stale = state_is_stale(state)
         if stale:
             response['text'] += '\n\n<i>' + STALE_WARNING + '</i>'
         elif state.get('kv', {}).get('pending_confirmation'):
-            response['text'] += '\n\n<i>На сайте замечено изменение. Перепроверяю, потому что доверие — хорошо, а две проверки лучше.</i>'
+            response['text'] += ('\n\n<i>EduPage что-то поменял. Перепроверяю, потому что одного '
+                                 'кривого ответа для вашего коллективного пиздеца достаточно.</i>')
         command=update.get('message',{}).get('text','').strip().split()[0].split('@')[0]
         if command in ('/week','/nextweek'):
             today=dt.datetime.now(TZ).date()
             monday=today-dt.timedelta(days=today.weekday())+dt.timedelta(days=7 if command=='/nextweek' else 0)
             photo=state.get('kv',{}).get('image:'+monday.isoformat(),{}).get('file_id')
-            if photo:
+            if photo and not state.get('live'):
                 snapshot = state.get('kv', {}).get('week:' + monday.isoformat())
                 caption = week_caption(snapshot, checked) if snapshot else 'П2‑23 · Расписание недели'
                 if stale:
-                    caption += '\n\n<i>Автопроверка задержалась. Перед выходом сверься с EduPage.</i>'
+                    caption += '\n\n<i>Автопроверка задержалась. Сверься с EduPage, если не хочешь выглядеть долбоёбом у пустой аудитории.</i>'
                 elif state.get('kv',{}).get('pending_confirmation'):
-                    caption += '\n\n<i>Замечено изменение; сейчас перепроверяю.</i>'
+                    caption += '\n\n<i>Замечено изменение; перепроверяю, чтобы вы не побежали не туда всей этой прекрасной толпой.</i>'
                 return {'method':'sendPhoto','chat_id':response['chat_id'],'photo':photo,'caption':caption,
                         'parse_mode':'HTML'}
         return response
@@ -151,11 +154,11 @@ class handler(BaseHTTPRequestHandler):
             state = json.loads(data)
             if state.get('schema') != 1 or not isinstance(state.get('kv'), dict):
                 raise ValueError('Invalid snapshot')
-            if command in ('/today', '/tomorrow', '/next') and state_is_stale(state):
+            if command in ('/today', '/tomorrow', '/next', '/week', '/nextweek') and state_is_stale(state):
                 try:
                     # Keep Telegram's webhook comfortably below its timeout. If the
                     # live read fails, make_reply transparently uses saved data.
-                    state = with_live_snapshots(state, EduPage(timeout=6, attempts=1).fetch())
+                    state = with_live_snapshots(state, EduPage(timeout=8, attempts=1).fetch())
                 except Exception:
                     pass
             self.respond(200, make_reply(update, state, chat_id))

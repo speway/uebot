@@ -9,7 +9,7 @@ import time
 import urllib.error
 import urllib.request
 
-from bot import Bot, Telegram, DeliveryError, EduPage, SourceError, TZ
+from bot import Bot, Telegram, DeliveryError, EduPage, SourceError, TZ, digest, NO_SCHEDULE_ROAST
 
 SOURCE_RELAY = 'https://uebot.vercel.app/api/source'
 STATE_BRANCH_VERCEL_CONFIG = json.dumps({
@@ -18,6 +18,9 @@ STATE_BRANCH_VERCEL_CONFIG = json.dumps({
 }, indent=2) + '\n'
 MINIMUM_SOURCE_INTERVAL = dt.timedelta(minutes=4)
 CONFIRMATION_RECHECK_SECONDS = 15
+WEEK_MASK_STATE_VERSION = 2
+KNOWN_FALSE_WEEK = '2026-09-14'
+KNOWN_FALSE_WEEK_DIGEST = '90e022f57812e01b234e8a46e7b25ffba1db027a467ff7d9df1b2dd6d95fdac8'
 
 
 def git(*args, cwd=None, allowed=(0,)):
@@ -63,7 +66,9 @@ def fetch_snapshots():
             reason = getattr(exc, 'reason', exc)
             relay_error = SourceError('Schedule relay connection: ' + type(reason).__name__)
     try:
-        return EduPage().fetch()
+        # Hosted routes sometimes stall selectively. Two shorter direct attempts
+        # give the workflow another full retry without hitting its eight-minute cap.
+        return EduPage(timeout=18, attempts=2).fetch()
     except SourceError as direct_error:
         if relay_error:
             raise SourceError(str(relay_error) + '; direct source: ' + str(direct_error)) from None
@@ -91,6 +96,53 @@ def check_with_confirmation(bot, fetcher=fetch_snapshots, sleeper=time.sleep, no
     if pending:
         sleeper(CONFIRMATION_RECHECK_SECONDS)
         bot.check(fetcher(), now)
+
+
+def repair_stored_week_mask_bug(bot, now=None):
+    """Repair the one persisted week produced before week masks were applied."""
+    if bot.get('week_mask_state_version', 0) >= WEEK_MASK_STATE_VERSION:
+        return False
+    key = 'week:' + KNOWN_FALSE_WEEK
+    pending_key = 'repair:week-mask:' + KNOWN_FALSE_WEEK
+    snapshot = bot.get(key)
+    pending = bot.get(pending_key, False)
+    if not pending:
+        if not snapshot or digest(snapshot.get('lessons', [])) != KNOWN_FALSE_WEEK_DIGEST:
+            bot.put('week_mask_state_version', WEEK_MASK_STATE_VERSION)
+            return False
+        corrected = dict(snapshot, lessons=[], revision=snapshot.get('revision', 0) + 1)
+        # Persist the safe answer before touching Telegram. While the photo is
+        # being replaced, webhook replies fall back to text instead of reusing it.
+        bot.put(pending_key, True)
+        bot.put(key, corrected)
+        bot.put('candidate:' + key, None)
+        image_key = 'image:' + KNOWN_FALSE_WEEK
+        image = bot.get(image_key, {})
+        if image:
+            bot.put(image_key, dict(image, hash='', file_id=''))
+        snapshot = corrected
+    if not snapshot or snapshot.get('lessons'):
+        raise RuntimeError('Stored week-mask repair has an invalid snapshot')
+    # Fix the harmful future card first. Cosmetic refreshes must not be able to
+    # delay removal of a timetable we now know is false.
+    bot.publish_week(snapshot)
+    bot.publish_image(snapshot)
+    bot.send_once('repair:week-mask-notice:' + KNOWN_FALSE_WEEK,
+                  '<b>П2‑23 · Исправил свой косяк</b>\n\n'
+                  'Следующая неделя раньше показывала копию текущей. Это была ошибка чтения недельной '
+                  'маски EduPage, а не опубликованное расписание. Ложную карточку заменил.\n\n'
+                  f'<i>{NO_SCHEDULE_ROAST}</i>')
+    today = (now or dt.datetime.now(TZ)).date()
+    current_monday = today - dt.timedelta(days=today.weekday())
+    current = bot.get('week:' + current_monday.isoformat())
+    if current:
+        # The same migration refreshes the current card and copy, so the design
+        # release does not depend on EduPage being reachable at deploy time.
+        bot.publish_week(current)
+        bot.publish_image(current)
+    bot.put('week_mask_state_version', WEEK_MASK_STATE_VERSION)
+    bot.put(pending_key, None)
+    return True
 
 
 class GitStateBot(Bot):
@@ -146,6 +198,11 @@ def main():
         git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com', cwd=state_dir)
         bot = GitStateBot(Telegram(token), chat_id, str(Path(temporary) / 'state.sqlite3'), state_dir, exists)
         bot.configure()
+        try:
+            repair_stored_week_mask_bug(bot)
+        except DeliveryError:
+            bot.put('delivery_attention', True)
+            raise
         if os.getenv('RECOVER_LAUNCH') == 'true':
             # Explicit one-time operator recovery after the revoked-token launch.
             # Leave all confirmed message IDs and successful publication records intact.

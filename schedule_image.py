@@ -142,9 +142,11 @@ def render_image(snapshot):
         rows.append((day, blocks, row_height))
 
     header_height = 330
+    unpublished_height = 400
     gaps_height = 22 * (len(rows) - 1)
     footer_height = 132
-    height = header_height + sum(row[2] for row in rows) + gaps_height + footer_height + MARGIN
+    body_height = unpublished_height if not lessons else sum(row[2] for row in rows) + gaps_height
+    height = header_height + body_height + footer_height + MARGIN
     if WIDTH + height > 9900 or max(WIDTH / height, height / WIDTH) > 20:
         raise ValueError('Timetable exceeds Telegram photo dimensions')
 
@@ -165,10 +167,14 @@ def render_image(snapshot):
     active_days = len({item['date'] for item in lessons})
     pair_word = _plural(lesson_count, 'ПАРА', 'ПАРЫ', 'ПАР')
     day_word = _plural(active_days, 'ДЕНЬ С ПАРАМИ', 'ДНЯ С ПАРАМИ', 'ДНЕЙ С ПАРАМИ')
-    _pill(draw, (MARGIN, 272, 264, 320), f'{lesson_count} {pair_word}', bold[22],
-          COLORS['orange_soft'], COLORS['ink'])
-    _pill(draw, (282, 272, 574, 320), f'{active_days} {day_word}', bold[20],
-          COLORS['green_soft'], COLORS['ink'])
+    if lessons:
+        _pill(draw, (MARGIN, 272, 264, 320), f'{lesson_count} {pair_word}', bold[22],
+              COLORS['orange_soft'], COLORS['ink'])
+        _pill(draw, (282, 272, 574, 320), f'{active_days} {day_word}', bold[20],
+              COLORS['green_soft'], COLORS['ink'])
+    else:
+        _pill(draw, (MARGIN, 272, 466, 320), 'ЕЩЁ НЕ ОПУБЛИКОВАНО', bold[20],
+              COLORS['orange_soft'], COLORS['ink'])
     _pill(draw, (720, 272, WIDTH-MARGIN, 320), 'ТАШКЕНТ · UTC+5', bold[20],
           COLORS['white'], COLORS['muted'])
 
@@ -177,7 +183,26 @@ def render_image(snapshot):
                COLORS['orange'], COLORS['blue'], COLORS['yellow']]
     y = header_height
     card_right = WIDTH - MARGIN
-    for day, blocks, row_height in rows:
+    if not lessons:
+        bottom = y + unpublished_height
+        draw.rounded_rectangle((MARGIN, y, card_right, bottom), radius=24, fill=COLORS['white'])
+        draw.rounded_rectangle((MARGIN, y, MARGIN + 16, bottom), radius=8, fill=COLORS['orange'])
+        draw.text((MARGIN + 42, y + 52), 'РАСПИСАНИЯ ЕЩЁ НЕТ', font=bold[42], fill=COLORS['ink'])
+        copy = [
+            'Сидите дальше в неведении, ебучие лохи.',
+            'EduPage пока не опубликовал занятия П2—23.',
+            '',
+            'Это не официальная отмена пар.',
+            'Как только деканат родит расписание,',
+            'я первым испорчу вам настроение.',
+        ]
+        copy_y = y + 130
+        for line in copy:
+            draw.text((MARGIN + 42, copy_y), line, font=bold[28] if line.startswith('Это') else regular[28],
+                      fill=COLORS['ink'] if line else COLORS['muted'])
+            copy_y += 42
+        y = bottom + 22
+    for day, blocks, row_height in (rows if lessons else []):
         bottom = y + row_height
         draw.rounded_rectangle((MARGIN, y, card_right, bottom), radius=24, fill=COLORS['white'])
         accent = accents[day.weekday()]
@@ -190,7 +215,7 @@ def render_image(snapshot):
 
         if not blocks:
             draw.text((MARGIN + 40, content_y + 25), 'ПАР НЕТ', font=bold[30], fill=COLORS['muted'])
-            draw.text((MARGIN + 230, content_y + 28), 'календарь проявил человечность',
+            draw.text((MARGIN + 230, content_y + 28), 'можно бездельничать официально',
                       font=regular[24], fill=COLORS['muted'])
         for index, block in enumerate(blocks):
             item = block['item']
@@ -230,7 +255,7 @@ def render_image(snapshot):
               font=regular[22], fill=COLORS['muted'])
     draw.text((MARGIN, footer_y + 38), '/today  сегодня   /tomorrow  завтра   /next  ближайшая пара',
               font=bold[22], fill=COLORS['ink'])
-    draw.text((MARGIN, footer_y + 78), 'Сохрани. Утренний ты этому решению ещё спасибо скажет.',
+    draw.text((MARGIN, footer_y + 78), 'Сохрани. Утренний ты — бесполезный мудак без памяти.',
               font=regular[22], fill=COLORS['muted'])
 
     output = BytesIO()

@@ -26,17 +26,19 @@ SOURCE = 'https://msu2006.edupage.org'
 GROUP = 'П2-23'
 TZ = ZoneInfo('Asia/Tashkent')
 DAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
-INTRO = ('Я читаю EduPage за П2‑23, потому что самостоятельно открыть расписание — '
-         'видимо, отдельная дисциплина по выбору.')
-BOT_CONFIG_VERSION = 2
+INTRO = ('Я читаю EduPage за П2‑23, потому что вы, ебучие гении, сами потеряетесь '
+         'между выбором группы и кнопкой «следующая неделя».')
+NO_SCHEDULE_ROAST = ('Расписания ещё нет. Так что сидите дальше в неведении, ебучие лохи. '
+                     'Как только деканат родит таблицу, я первым испорчу вам настроение.')
+BOT_CONFIG_VERSION = 3
 BOT_COMMANDS = [
-    {'command': 'today', 'description': 'Что терпим сегодня'},
-    {'command': 'tomorrow', 'description': 'К чему готовиться завтра'},
-    {'command': 'next', 'description': 'Ближайшая пара и сколько до неё'},
-    {'command': 'week', 'description': 'Эта неделя картинкой'},
-    {'command': 'nextweek', 'description': 'Следующая неделя картинкой'},
-    {'command': 'status', 'description': 'Свежесть данных и здоровье бота'},
-    {'command': 'help', 'description': 'Что вообще умеет этот трудяга'},
+    {'command': 'today', 'description': 'Какой сегодня учебный пиздец'},
+    {'command': 'tomorrow', 'description': 'Чем испортят завтрашний день'},
+    {'command': 'next', 'description': 'Куда тащиться следующим'},
+    {'command': 'week', 'description': 'Вся неделя одним страданием'},
+    {'command': 'nextweek', 'description': 'Будущее, если его опубликовали'},
+    {'command': 'status', 'description': 'Кто опять обосрался'},
+    {'command': 'help', 'description': 'Инструкция для самых потерянных'},
 ]
 LOG = logging.getLogger('schedule')
 
@@ -129,9 +131,13 @@ def week_caption(snapshot, checked_at=None):
             checked_line = f'\nПроверено: {checked:%d.%m в %H:%M}'
         except (TypeError, ValueError):
             pass
+    if not snapshot.get('lessons'):
+        return (f'<b>П2‑23 · {start:%d.%m}–{end:%d.%m.%Y}</b>\n'
+                f'Расписание ещё не опубликовано.{checked_line}\n\n'
+                f'<i>{NO_SCHEDULE_ROAST} Это не отмена пар, не обольщайтесь.</i>')
     return (f'<b>П2‑23 · {start:%d.%m}–{end:%d.%m.%Y}</b>\n'
             f'{lesson_count} {pair_word} · {day_count} {day_word}{room_line}{checked_line}\n\n'
-            '<i>Сохрани. Память перед первой парой — источник менее надёжный.</i>')
+            '<i>Сохрани. Утренний ты — бесполезный мудак, на его память надежды нет.</i>')
 
 
 def ipv4_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
@@ -220,6 +226,7 @@ class EduPage:
         self.connect()
         meta = self.rpc('ttviewer', 'getTTViewerData', [year])
         monday = today - dt.timedelta(days=today.weekday())
+        required_weeks = (monday, monday + dt.timedelta(days=7))
         published = {}
         for row in meta['regular']['timetables']:
             if row.get('hidden') or not row.get('datefrom'):
@@ -229,19 +236,35 @@ class EduPage:
                 # A republished week can have a new number. Compare by date, not number.
                 published[start] = row
         if not published:
-            raise SourceError('Для ближайших недель пока нет опубликованного расписания')
+            # A completely empty window can also mean EduPage changed its API.
+            # Keep confirmed data until at least one nearby publication proves
+            # that this metadata response is the real timetable index.
+            raise SourceError('Для ближайших недель пока нет подтверждённых публикаций')
         snapshots = []
         for start, row in sorted(published.items()):
             raw = self.rpc('regulartt', 'regularttGetData', [str(row['tt_num'])])
             snapshots.append(parse_week(raw, row))
-        return snapshots
+        present = {dt.date.fromisoformat(snapshot['week']) for snapshot in snapshots}
+        for start in required_weeks:
+            if start not in present:
+                # A successful metadata read with no row for this date is an
+                # authoritative "not published yet", not a transport failure.
+                end = start + dt.timedelta(days=5)
+                snapshots.append({
+                    'week': start.isoformat(),
+                    'source_title': f'{start:%d.%m}–{end:%d.%m.%Y} · не опубликовано',
+                    'class_name': GROUP,
+                    'lessons': [],
+                })
+        return sorted(snapshots, key=lambda snapshot: snapshot['week'])
 
 
 def parse_week(raw, meta):
     try:
         tables = {table['id']: {str(row['id']): row for row in table['data_rows']}
                   for table in raw['dbiAccessorRes']['tables']}
-        for required in ('classes', 'lessons', 'cards', 'periods', 'subjects', 'teachers', 'classrooms'):
+        for required in ('classes', 'lessons', 'cards', 'periods', 'subjects', 'teachers',
+                         'classrooms', 'weeks'):
             if required not in tables:
                 raise SourceError('Отсутствует таблица ' + required)
         matches = [row for row in tables['classes'].values() if normalized(row.get('short')) == GROUP]
@@ -250,8 +273,18 @@ def parse_week(raw, meta):
         class_id = str(matches[0]['id'])
         start = dt.date.fromisoformat(meta['datefrom'])
         monday = start - dt.timedelta(days=start.weekday())
+        title = normalized(meta.get('text', ''))
+        week_matches = []
+        for week in tables['weeks'].values():
+            labels = {normalized(week.get(field)) for field in ('name', 'short')}
+            if any(label and label in title for label in labels):
+                week_matches.append(int(week['id']))
+        if len(week_matches) != 1:
+            raise SourceError('Неделя публикации не определена однозначно')
+        week_index = week_matches[0]
+        if week_index < 0:
+            raise SourceError('Изменился формат недель расписания')
         cards = []
-        active_weeks = set()
         for card in tables['cards'].values():
             lesson = tables['lessons'][str(card['lessonid'])]
             if class_id not in list(map(str, lesson.get('classids', []))):
@@ -260,10 +293,12 @@ def parse_week(raw, meta):
                 continue  # Unplaced lessons are not scheduled classes.
             if not card.get('days') or not card.get('period') or not card.get('weeks'):
                 raise SourceError('Неполные данные занятия')
-            active_weeks.update(i for i, bit in enumerate(card['weeks']) if bit == '1')
+            week_mask = card['weeks']
+            if set(week_mask) - {'0', '1'} or week_index >= len(week_mask):
+                raise SourceError('Изменился формат недель расписания')
+            if week_mask[week_index] != '1':
+                continue
             cards.append((card, lesson))
-        if len(active_weeks) > 1:
-            raise SourceError('Обнаружен многонедельный шаблон: требуется проверка привязки дат')
         result = []
         for card, lesson in cards:
             if set(card['days']) - {'0', '1'} or len(card['days']) > 7:
@@ -327,7 +362,7 @@ def render_day(date, lessons):
                 block += f" · перерыв {item['_break']} мин"
         lines.append(block)
     if not lessons:
-        lines.append('Пар нет. Редкая победа календаря над системой образования.')
+        lines.append('Пар нет. Можете бездельничать официально, будто раньше вам требовалось разрешение.')
     return '\n\n'.join(lines)
 
 
@@ -344,25 +379,28 @@ def short_wait(delta):
 def day_tease(date, lessons, now):
     """Useful timing first, friendly roast second."""
     if not lessons:
-        return 'Можно продолжить делать вид, что все дедлайны под контролем.'
+        return 'Свободный день. Продолжайте делать вид, что именно сегодня вы закроете все дедлайны.'
     lessons = sorted(lessons, key=lambda item: (item['start'], item['end'], item['subject']))
     start = dt.datetime.combine(date, dt.time.fromisoformat(lessons[0]['start']), TZ)
     end = dt.datetime.combine(date, dt.time.fromisoformat(lessons[-1]['end']), TZ)
     if date > now.date():
         return (f"Первая пара в {lessons[0]['start']}. Будильник поставь сейчас: "
-                'утренний ты — крайне ненадёжный коллега.')
+                'утренний ты — ленивый долбоёб с доступом к кнопке «отложить».')
     if date < now.date() or now >= end:
-        return 'На сегодня всё. Академический урон получен, можно восстанавливаться.'
+        return 'На сегодня всё. Академический пиздец пережит, можно ползти восстанавливаться.'
     if now < start:
-        return f'До первой пары {short_wait(start - now)}. Времени достаточно даже на отрицание.'
+        return (f'До первой пары {short_wait(start - now)}. Успеешь собраться, поныть '
+                'и всё равно выйти в последний момент.')
     for item in lessons:
         item_start = dt.datetime.combine(date, dt.time.fromisoformat(item['start']), TZ)
         item_end = dt.datetime.combine(date, dt.time.fromisoformat(item['end']), TZ)
         if item_start <= now < item_end:
-            return f"Сейчас идёт «{clean_spaces(item['subject'])}» — до {item['end']}. Держимся научно."
+            return (f"Сейчас идёт «{clean_spaces(item['subject'])}» — до {item['end']}. "
+                    'Сделай умное лицо, вдруг прокатит.')
         if now < item_start:
-            return f"Следующая в {item['start']} — через {short_wait(item_start - now)}. Не потеряйся по дороге."
-    return 'На сегодня всё. Академический урон получен, можно восстанавливаться.'
+            return (f"Следующая в {item['start']} — через {short_wait(item_start - now)}. "
+                    'Не проеби дорогу, навигатор из тебя как из деканата UX-дизайнер.')
+    return 'На сегодня всё. Академический пиздец пережит, можно ползти восстанавливаться.'
 
 
 def render_day_reply(date, lessons, now):
@@ -376,18 +414,22 @@ def render_week(snapshot):
     start = dt.date.fromisoformat(snapshot['week'])
     end = week_end(snapshot)
     lesson_count, day_count, _ = week_stats(snapshot)
-    result = [f'<b>П2‑23 · Расписание</b>\n{start:%d.%m}–{end:%d.%m.%Y}\n'
-              f"{lesson_count} {plural_ru(lesson_count, 'пара', 'пары', 'пар')} · "
-              f"{day_count} {plural_ru(day_count, 'учебный день', 'учебных дня', 'учебных дней')}"]
+    heading = f'<b>П2‑23 · Расписание</b>\n{start:%d.%m}–{end:%d.%m.%Y}'
+    if snapshot['lessons']:
+        heading += (f"\n{lesson_count} {plural_ru(lesson_count, 'пара', 'пары', 'пар')} · "
+                    f"{day_count} {plural_ru(day_count, 'учебный день', 'учебных дня', 'учебных дней')}")
+    else:
+        heading += '\nСтатус: ещё не опубликовано'
+    result = [heading]
     groups = collections.defaultdict(list)
     for item in snapshot['lessons']:
         groups[item['date']].append(item)
     if not groups:
-        result.append('В этой публикации занятия П2‑23 пока не расставлены. Это не подтверждение отмены занятий.')
+        result.append(NO_SCHEDULE_ROAST + ' Это не подтверждение отмены пар — не радуйтесь раньше времени.')
     for date, lessons in sorted(groups.items()):
         result.append(render_day(date, lessons))
     result.append('<a href="' + SOURCE + '/timetable/">Источник · EduPage</a> · Время Ташкента\n'
-                  '<i>Можешь не запоминать. Я уже совершил эту ошибку за тебя.</i>')
+                  '<i>Можешь не запоминать. Я уже сделал за тебя и эту жалкую часть взрослой жизни.</i>')
     return split_sections(result)
 
 
@@ -415,8 +457,21 @@ def describe_changes(old, new, today):
     for item in new:
         if item['date'] >= today:
             new_days[item['date']].append(item)
+    if old_days and not new_days:
+        return [('<b>П2‑23 · Расписание пока снято</b>\n\n'
+                 'EduPage больше не подтверждает ни одной будущей пары из прошлой версии. '
+                 'Старую карточку заменил на «ещё не опубликовано». Это не официальная отмена занятий.\n\n'
+                 f'<i>{NO_SCHEDULE_ROAST}</i>\n\n'
+                 f'<a href="{SOURCE}/timetable/">Проверить источник</a>')]
+    if not old_days and new_days:
+        count = sum(map(len, new_days.values()))
+        return [(f'<b>П2‑23 · Расписание наконец опубликовано</b>\n\n'
+                 f"В EduPage появилось {count} {plural_ru(count, 'пара', 'пары', 'пар')}. "
+                 'Основную карточку уже обновил — можно начинать торг с будильником.\n\n'
+                 '<i>Деканат наконец высрал расписание. Сериал закрыли, страдания оставили.</i>\n\n'
+                 f'<a href="{SOURCE}/timetable/">Проверить источник</a>')]
     sections = ['<b>П2‑23 · Изменения в расписании</b>\n'
-                'EduPage снова переобулся быстрее, чем вы успели запомнить аудиторию.']
+                'EduPage снова переобулся быстрее, чем вы успели запомнить хоть какую-то хуйню.']
     changes = 0
     for date in sorted(old_days.keys() | new_days.keys()):
         a = {digest(x): x for x in old_days[date]}
@@ -449,13 +504,15 @@ def describe_changes(old, new, today):
                 del removed[key]
                 del added[new_key]
         for key in sorted(removed):
-            sections.append('<b>Убрали</b> — можете выдохнуть, но пока осторожно:\n' + lesson_text(a[key]))
+            sections.append('<b>Убрали</b> — выдыхайте осторожно, от счастья тоже можно обосраться:\n' +
+                            lesson_text(a[key]))
         for key in sorted(added):
-            sections.append('<b>Добавили</b> — расслабляться было преждевременно:\n' + lesson_text(b[key]))
+            sections.append('<b>Добавили</b> — расслабились, ебать вас, преждевременно:\n' +
+                            lesson_text(b[key]))
     if not changes:
         return []
     sections.append('<a href="' + SOURCE + '/timetable/">Проверить источник</a> · Время Ташкента\n'
-                    '<i>Перепроверьте, чтобы не проводить полевое исследование «Почему аудитория пустая».</i>')
+                    '<i>Перепроверьте, чтобы потом не стоять у пустой аудитории толпой долбоёбов.</i>')
     return split_sections(sections)
 
 
@@ -565,10 +622,10 @@ class Bot:
             return
         self.tg.call('setMyCommands', commands=BOT_COMMANDS)
         self.tg.call('setMyDescription', description=(
-            'Расписание П2‑23 без квеста по EduPage: сегодня, завтра, неделя картинкой, '
-            'изменения и вечерние напоминания. Иногда подкалывает, зато не опаздывает намеренно.'))
+            'Расписание П2‑23 без ебучего квеста по EduPage: сегодня, завтра, неделя картинкой, '
+            'изменения и напоминания. Подкалывает, потому что кто-то же должен вас воспитывать.'))
         self.tg.call('setMyShortDescription', short_description=(
-            'Расписание П2‑23. Читает EduPage, считает пары, бережёт остатки вашей памяти.'))
+            'Расписание П2‑23. Ищу пары, пока вы ищете оправдание очередному опозданию.'))
         self.put('bot_config_version', BOT_CONFIG_VERSION)
 
     def publish_week(self, snapshot):
@@ -589,11 +646,11 @@ class Bot:
         for obsolete in previous[len(pages):]:
             if obsolete.get('message_id'):
                 self.tg.call('editMessageText', chat_id=self.chat_id, message_id=obsolete['message_id'],
-                             text='П2‑23 · Расписание обновлено в основном сообщении за эту неделю.')
+                             text='П2‑23 · Этот кусок устарел. Смотрите основное сообщение, потерянные вы люди.')
         self.put(key, stored)
 
     def publish_image(self, snapshot):
-        if not hasattr(self.tg, 'photo') or not snapshot['lessons']:
+        if not hasattr(self.tg, 'photo'):
             return
         key='image:'+snapshot['week']
         prior=self.get(key, {})
@@ -651,8 +708,6 @@ class Bot:
             fingerprint = digest(lessons)
             changed = old is not None and digest(old['lessons']) != fingerprint
             snapshot = dict(snapshot, revision=(old or {}).get('revision', 0) + int(changed))
-            if old and not lessons and old['lessons']:
-                raise SourceError('Пустой ответ после заполненной недели: отмена занятий не подтверждена')
             if changed:
                 candidate = self.get('candidate:' + key)
                 if candidate != fingerprint:
@@ -674,8 +729,7 @@ class Bot:
         for snapshot in ready:
             key = 'week:' + snapshot['week']
             try:
-                if snapshot['lessons']:
-                    self.publish_week(snapshot)
+                self.publish_week(snapshot)
                 self.publish_image(snapshot)
                 for item in self.get('outbox:' + key, []):
                     self.send_once(item['key'], item['text'])
@@ -693,8 +747,7 @@ class Bot:
         snapshot = self.get('week:' + monday.isoformat())
         if not snapshot or not snapshot['lessons']:
             label = 'сегодня' if date == now.date() else 'завтра' if date == now.date() + dt.timedelta(days=1) else date.strftime('%d.%m')
-            return [f'<b>П2‑23 · {label.capitalize()}</b>\n\nПодтверждённого расписания пока нет. '
-                    'EduPage ещё думает — редкий случай, когда вы с ним заняты одним и тем же.\n\n'
+            return [f'<b>П2‑23 · {label.capitalize()}</b>\n\n{NO_SCHEDULE_ROAST}\n\n'
                     f'<a href="{SOURCE}/timetable/">Проверить источник</a>']
         items = [x for x in snapshot['lessons'] if x['date'] == date.isoformat()]
         return [render_day_reply(date, items, now)]
@@ -714,8 +767,8 @@ class Bot:
             if end > now:
                 future_lessons.append(item)
         if not future_lessons:
-            return ('<b>П2‑23 · Что дальше?</b>\n\nВ опубликованных неделях будущих пар нет. '
-                    'Либо свобода, либо EduPage ещё не родил следующую неделю — ставлю на второе.')
+            return (f'<b>П2‑23 · Что дальше?</b>\n\n{NO_SCHEDULE_ROAST}\n\n'
+                    '<i>Свободу пока не празднуйте: отсутствие расписания не является справкой об отмене пар.</i>')
         blocks = merge_adjacent_lessons(future_lessons)
         item = min(blocks, key=lambda value: (value['date'], value['start'], value['subject']))
         date = dt.date.fromisoformat(item['date'])
@@ -736,7 +789,7 @@ class Bot:
             if item.get('_break'):
                 pair_line += f" · перерыв {item['_break']} мин"
         return (f'<b>П2‑23 · {heading}</b>\n{html.escape(timing)}\n\n{lesson_text(item)}{pair_line}\n\n'
-                '<i>Теперь опоздание хотя бы нельзя списать на нехватку информации.</i>')
+                '<i>Теперь опоздание можно списать только на твою охуенную организованность.</i>')
 
     def status_message(self, now=None):
         now = now or dt.datetime.now(TZ)
@@ -763,11 +816,11 @@ class Bot:
             'Доставка: ' + ('нужна проверка администратором' if delivery_problem else 'без ошибок'),
         ]
         if source_problem:
-            lines.append('\n<i>Показываю сохранённое расписание. Паниковать можно, но строго по тайм-слоту.</i>')
+            lines.append('\n<i>Показываю сохранённое. Если попрётесь вслепую — это уже ваш личный долбоебизм.</i>')
         elif delivery_problem:
-            lines.append('\n<i>Расписание сохранилось, но Telegram сыграл в «доставил — не доставил».</i>')
+            lines.append('\n<i>Расписание сохранилось, но Telegram устроил «доставил — не доставил». Ебучий квантовый курьер.</i>')
         else:
-            lines.append('\n<i>Жив, работаю, расписание проверяю. Кто-то в этой группе всё-таки стабилен.</i>')
+            lines.append('\n<i>Жив, работаю, ничего не проебал. В этой группе хотя бы кто-то.</i>')
         return '\n'.join(lines)
 
     def _items(self, prefix):
@@ -803,16 +856,18 @@ class Bot:
         elif command in ('/week', '/nextweek'):
             monday = today - dt.timedelta(days=today.weekday()) + dt.timedelta(days=7 if command == '/nextweek' else 0)
             snapshot = self.get('week:' + monday.isoformat())
-            messages = render_week(snapshot) if snapshot else ['На эту неделю расписание пока не получено.']
+            messages = render_week(snapshot) if snapshot else [NO_SCHEDULE_ROAST]
         elif command == '/status':
             messages = [self.status_message(now)]
         elif command in ('/start', '/help'):
             messages = ['<b>П2‑23 · Уебот</b>\n\n' + INTRO +
-                        '\n\n/today — что терпим сегодня\n/tomorrow — к чему готовиться завтра\n'
-                        '/next — ближайшая пара и сколько до неё\n/week — неделя картинкой\n'
-                        '/nextweek — следующая неделя\n/status — жив ли бот и свежи ли данные\n\n'
+                        '\n\n/today — какой сегодня учебный пиздец\n'
+                        '/tomorrow — чем испортят завтрашний день\n'
+                        '/next — куда тащиться следующим\n/week — вся неделя одним страданием\n'
+                        '/nextweek — будущее, если деканат его высрал\n'
+                        '/status — кто опять обосрался\n\n'
                         'Изменение публикую только после повторной проверки, чтобы одна галлюцинация '
-                        'EduPage не устроила миграцию всей группы. Вечером напоминаю пары на завтра. '
+                        'EduPage не погнала всю толпу долбоёбов в пустую аудиторию. Вечером напоминаю пары на завтра. '
                         f'Время Ташкента.\n<a href="{SOURCE}/timetable/">Открыть первоисточник</a>']
         else:
             return

@@ -82,6 +82,32 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn('context', open_request.call_args.kwargs)
         self.assertNotIn('check_hostname', open_request.call_args.kwargs)
 
+    def test_missing_future_publication_becomes_an_explicit_empty_week(self):
+        from unittest.mock import Mock
+        source = EduPage()
+        source.connect = Mock()
+        source.rpc = Mock(side_effect=[{
+            'regular': {'timetables': [{
+                'datefrom': META['datefrom'],
+                'text': META['text'],
+                'tt_num': META['tt_num'],
+            }]},
+        }, self.raw])
+        snapshots = source.fetch(dt.date(2026, 9, 7))
+        self.assertEqual([snapshot['week'] for snapshot in snapshots],
+                         ['2026-09-07', '2026-09-14'])
+        self.assertEqual(len(snapshots[0]['lessons']), 12)
+        self.assertEqual(snapshots[1]['lessons'], [])
+        self.assertIn('не опубликовано', snapshots[1]['source_title'])
+
+    def test_completely_empty_publication_index_fails_closed(self):
+        from unittest.mock import Mock
+        source = EduPage()
+        source.connect = Mock()
+        source.rpc = Mock(return_value={'regular': {'timetables': []}})
+        with self.assertRaises(SourceError):
+            source.fetch(dt.date(2026, 9, 7))
+
     def test_photo_publish_updates_without_duplicate(self):
         from unittest.mock import Mock
         self.api.photo = Mock(return_value={'message_id': 201, 'photo': [{'file_id': 'photo1'}]})
@@ -91,7 +117,10 @@ class ScheduleTests(unittest.TestCase):
         changed = copy.deepcopy(self.week)
         changed['lessons'][0]['rooms'] = ['215']
         self.bot.publish_image(changed)
-        self.assertEqual(self.api.photo.call_count, 2)
+        empty = copy.deepcopy(changed)
+        empty['lessons'] = []
+        self.bot.publish_image(empty)
+        self.assertEqual(self.api.photo.call_count, 3)
         self.assertEqual(self.api.photo.call_args.args[-1], 201)
 
     def test_uncertain_photo_send_is_not_repeated(self):
@@ -127,6 +156,19 @@ class ScheduleTests(unittest.TestCase):
         monday = [x for x in self.week['lessons'] if x['date'] == '2026-09-07']
         self.assertEqual([(x['start'], x['end']) for x in monday], [('09:00', '10:30'), ('10:45', '12:15')])
         self.assertTrue(all(x['rooms'] == ['313'] for x in self.week['lessons']))
+
+    def test_week_mask_does_not_copy_current_lessons_into_next_week(self):
+        next_week = parse_week(self.raw, {
+            'datefrom': '2026-09-14',
+            'text': '14 - 19 сентября (14. 09. - 19. 09. 2026)',
+            'tt_num': '131',
+        })
+        self.assertEqual(next_week['week'], '2026-09-14')
+        self.assertEqual(next_week['lessons'], [])
+
+    def test_unknown_week_label_fails_closed(self):
+        with self.assertRaises(SourceError):
+            parse_week(self.raw, {'datefrom': '2026-09-14', 'text': 'непонятная неделя'})
 
     def test_exact_group_required(self):
         table = next(t for t in self.raw['dbiAccessorRes']['tables'] if t['id'] == 'classes')
@@ -175,13 +217,26 @@ class ScheduleTests(unittest.TestCase):
             self.bot.check([snapshot], self.now)
         self.assertEqual(len(self.api.messages), baseline)
 
-    def test_empty_response_preserves_previous_schedule(self):
+    def test_empty_week_requires_confirmation_before_clearing(self):
         self.bot.check([self.week], self.now)
         empty = copy.deepcopy(self.week)
         empty['lessons'] = []
-        with self.assertRaises(SourceError):
-            self.bot.check([empty], self.now)
+        self.bot.check([empty], self.now)
         self.assertEqual(len(self.bot.get('week:2026-09-07')['lessons']), 12)
+        self.bot.check([empty], self.now)
+        self.assertEqual(self.bot.get('week:2026-09-07')['lessons'], [])
+        self.assertIsNone(self.bot.get('candidate:week:2026-09-07'))
+        self.assertTrue(any('Расписание пока снято' in text for _, text in self.api.messages))
+
+    def test_newly_published_week_gets_one_compact_announcement(self):
+        empty = copy.deepcopy(self.week)
+        empty['lessons'] = []
+        self.bot.check([empty], self.now)
+        self.bot.check([self.week], self.now)
+        self.bot.check([self.week], self.now)
+        announcements = [text for _, text in self.api.messages if 'наконец опубликовано' in text]
+        self.assertEqual(len(announcements), 1)
+        self.assertIn('12 пар', announcements[0])
 
     def test_uncertain_delivery_does_not_repeat(self):
         self.api.fail = True
@@ -269,13 +324,33 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn('7 мин назад', result)
         self.assertIn('Источник: отвечает', result)
         self.assertIn('Доставка: без ошибок', result)
-        self.assertIn('Кто-то в этой группе', result)
+        self.assertIn('хотя бы кто-то', result)
 
     def test_week_caption_contains_counts_and_checked_time(self):
         result = week_caption(self.week, self.now.isoformat())
         self.assertIn('07.09–12.09.2026', result)
         self.assertIn('12 пар · 5 учебных дней', result)
         self.assertIn('Проверено: 07.09 в 07:00', result)
+
+    def test_empty_week_caption_cannot_be_mistaken_for_cancelled_classes(self):
+        empty = copy.deepcopy(self.week)
+        empty['lessons'] = []
+        result = week_caption(empty, self.now.isoformat())
+        self.assertIn('Расписание ещё не опубликовано', result)
+        self.assertIn('Это не отмена пар', result)
+        self.assertIn('ебучие лохи', result)
+        self.assertNotIn('0 пар', result)
+        message = '\n'.join(render_week(empty))
+        self.assertIn('Статус: ещё не опубликовано', message)
+        self.assertIn('ебучие лохи', message)
+        self.assertNotIn('0 пар', message)
+
+    def test_missing_schedule_roast_is_used_for_day_and_next(self):
+        empty = copy.deepcopy(self.week)
+        empty['lessons'] = []
+        self.bot.put('week:' + empty['week'], empty)
+        self.assertIn('ебучие лохи', self.bot.day_messages(self.now.date(), self.now)[0])
+        self.assertIn('ебучие лохи', self.bot.next_message(self.now))
 
     def test_bot_profile_and_command_menu_are_configured_once(self):
         self.bot.configure()

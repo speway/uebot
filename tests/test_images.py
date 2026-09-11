@@ -20,6 +20,13 @@ class ImageTests(unittest.TestCase):
         self.assertLess(im.width+im.height,10000)
         self.assertLess(im.height/im.width,20)
 
+    def test_unpublished_week_is_a_valid_placeholder_image(self):
+        snapshot=self.snapshot();snapshot['lessons']=[]
+        im=Image.open(BytesIO(render_image(snapshot)))
+        self.assertEqual(im.width,1080)
+        self.assertGreater(im.height,700)
+        self.assertLess(im.width+im.height,10000)
+
     def test_consecutive_identical_pairs_are_one_visual_block(self):
         monday=[x for x in self.snapshot()['lessons'] if x['date']=='2026-09-07']
         merged=_merge_day(monday)
