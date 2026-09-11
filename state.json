@@ -31,7 +31,7 @@
         "message_id": 34358
       }
     ],
-    "repair:week-mask:2026-09-14": true,
+    "repair:week-mask:2026-09-14": null,
     "sent:repair:week-mask-notice:2026-09-14": {
       "message_id": 34398,
       "status": "sent"
