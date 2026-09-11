@@ -33,7 +33,8 @@
     ],
     "repair:week-mask:2026-09-14": true,
     "sent:repair:week-mask-notice:2026-09-14": {
-      "status": "pending"
+      "message_id": 34398,
+      "status": "sent"
     },
     "sent:tomorrow:2026-09-11": {
       "message_id": 34360,
