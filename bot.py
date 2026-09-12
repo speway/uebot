@@ -1062,7 +1062,7 @@ class Bot:
         return (f'<b>П2‑23 · {heading}</b>\n{html.escape(timing)}\n\n{lesson_text(item)}{pair_line}\n\n'
                 f'<i>{html.escape(tease)}</i>')
 
-    def status_message(self, now=None):
+    def status_message(self, now=None, runtime_oidc_token=None):
         from ai_responder import provider_ready
 
         now = now or dt.datetime.now(TZ)
@@ -1100,7 +1100,8 @@ class Bot:
             'Доставка: ' + ('нужна проверка администратором' if delivery_problem else 'без ошибок'),
             'Эта неделя: ' + week_status(monday),
             'Следующая неделя: ' + week_status(monday + dt.timedelta(days=7)),
-            'AI-ответы: ' + ('готовы' if provider_ready() else 'ждут настройки'),
+            'AI-канал: ' + ('подключён' if provider_ready(runtime_oidc_token)
+                            else 'ждёт настройки'),
             'Автопроверка: примерно каждые 5 минут',
         ]
         if source_problem:
@@ -1186,7 +1187,7 @@ class Bot:
             snapshot = self.get('week:' + monday.isoformat())
             messages = render_week(snapshot) if snapshot else [NO_SCHEDULE_ROAST]
         elif command == '/status':
-            messages = [self.status_message(now)]
+            messages = [self.status_message(now, runtime_oidc_token)]
         elif command in ('/start', '/help'):
             messages = ['<b>П2‑23 · Уебот</b>\n\n' + INTRO +
                         '\n\n/today — какой сегодня учебный пиздец\n'

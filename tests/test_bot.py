@@ -396,6 +396,7 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn('7 мин назад', result)
         self.assertIn('Источник: отвечает', result)
         self.assertIn('Доставка: без ошибок', result)
+        self.assertIn('AI-канал: ждёт настройки', result)
         self.assertIn('Автопроверка: примерно каждые 5 минут', result)
         self.assertIn('<i>', result)
 
@@ -408,6 +409,10 @@ class ScheduleTests(unittest.TestCase):
         result = self.bot.status_message(self.now)
         self.assertIn('Эта неделя: 12 пар', result)
         self.assertIn('Следующая неделя: ещё не опубликована', result)
+
+    def test_status_sees_runtime_oidc_channel(self):
+        result = self.bot.status_message(self.now, 'runtime-oidc-token')
+        self.assertIn('AI-канал: подключён', result)
 
     def test_week_caption_contains_counts_and_checked_time(self):
         result = week_caption(self.week, self.now.isoformat())
