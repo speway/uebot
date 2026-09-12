@@ -121,8 +121,8 @@ def private_ai_allowed(update):
     return sender_id in allowed
 
 
-def _provider():
-    gateway_key = (os.getenv('AI_GATEWAY_API_KEY') or
+def _provider(runtime_oidc_token=None):
+    gateway_key = (runtime_oidc_token or os.getenv('AI_GATEWAY_API_KEY') or
                    os.getenv('VERCEL_OIDC_TOKEN') or '').strip()
     if gateway_key:
         model = os.getenv('AI_MODEL', DEFAULT_GATEWAY_MODEL).strip() or DEFAULT_GATEWAY_MODEL
@@ -139,8 +139,8 @@ def _provider():
     return None
 
 
-def provider_ready():
-    return _provider() is not None
+def provider_ready(runtime_oidc_token=None):
+    return _provider(runtime_oidc_token) is not None
 
 
 def _week_context(snapshot):
@@ -246,8 +246,9 @@ def _bounded_int(name, default, minimum, maximum):
         return default
 
 
-def generate_answer(question, state, user_id, reply_context='', now=None, opener=None):
-    provider = _provider()
+def generate_answer(question, state, user_id, reply_context='', now=None, opener=None,
+                    runtime_oidc_token=None):
+    provider = _provider(runtime_oidc_token)
     if not provider:
         raise AIError('unconfigured')
     url, api_key, model, gateway = provider
@@ -329,7 +330,8 @@ def reset_runtime_state():
         _reply_cache.clear()
 
 
-def reply_to_update(update, state, chat_id, username=BOT_USERNAME, now=None):
+def reply_to_update(update, state, chat_id, username=BOT_USERNAME, now=None,
+                    runtime_oidc_token=None):
     """Generate one HTML-safe Telegram message with bounded cost and retry behavior."""
     if not is_ai_request(update, chat_id, username):
         return None
@@ -360,7 +362,8 @@ def reply_to_update(update, state, chat_id, username=BOT_USERNAME, now=None):
         if user_id:
             _last_request[user_id] = current
     try:
-        answer = generate_answer(question, state, user_id, reply_context, now)
+        answer = generate_answer(question, state, user_id, reply_context, now,
+                                 runtime_oidc_token=runtime_oidc_token)
         result = '<b>Уебот · AI</b>\n\n' + html.escape(answer)
     except AIError as exc:
         result = '<b>Уебот · AI</b>\n\n' + html.escape(_error_reply(exc))

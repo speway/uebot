@@ -225,13 +225,15 @@ class HostingTests(unittest.TestCase):
             'from': {'id': 707, 'is_bot': False},
             'text': '/ask почему небо синее?',
         }}
-        with patch.dict('os.environ', {'VERCEL_OIDC_TOKEN': 'test-token'}, clear=True), \
-                patch('ai_responder.generate_answer', return_value='Из-за рассеяния света.'):
-            result = make_reply(request, {'kv': {}}, -100123)
+        with patch.dict('os.environ', {}, clear=True), \
+                patch('ai_responder.generate_answer',
+                      return_value='Из-за рассеяния света.') as generate:
+            result = make_reply(request, {'kv': {}}, -100123, 'runtime-oidc-token')
         self.assertEqual(result['reply_parameters']['message_id'], 88)
         self.assertTrue(result['reply_parameters']['allow_sending_without_reply'])
         self.assertIn('Из-за рассеяния света.', result['text'])
         self.assertNotIn('Автопроверка задержалась', result['text'])
+        self.assertEqual(generate.call_args.kwargs['runtime_oidc_token'], 'runtime-oidc-token')
 
     def test_stale_state_can_be_overlaid_with_live_schedule(self):
         old = {'schema': 1, 'kv': {'last_success': '2026-09-10T00:00:00+05:00',

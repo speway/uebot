@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from ai_responder import (BOT_USERNAME, DIRECT_URL, GATEWAY_URL, extract_question,
-                          generate_answer, is_ai_request, reply_to_update,
+                          generate_answer, is_ai_request, provider_ready, reply_to_update,
                           reset_runtime_state, schedule_context)
 from bot import TZ, parse_week
 from test_bot import META
@@ -144,6 +144,22 @@ class AIResponderTests(unittest.TestCase):
         self.assertNotIn('providerOptions', seen['body'])
         self.assertNotIn('tools', seen['body'])
         self.assertEqual(answer, 'Прямой ответ')
+
+    def test_runtime_oidc_header_authenticates_gateway_without_an_env_secret(self):
+        seen = {}
+
+        def opener(request, timeout):
+            seen['url'] = request.full_url
+            seen['authorization'] = request.get_header('Authorization')
+            return FakeResponse({'output_text': 'OIDC работает'})
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertTrue(provider_ready('runtime-oidc-token'))
+            answer = generate_answer('Тест', self.state, 42, now=self.now, opener=opener,
+                                     runtime_oidc_token='runtime-oidc-token')
+        self.assertEqual(seen['url'], GATEWAY_URL)
+        self.assertEqual(seen['authorization'], 'Bearer runtime-oidc-token')
+        self.assertEqual(answer, 'OIDC работает')
 
     def test_missing_question_and_missing_provider_fail_without_network(self):
         with patch.dict(os.environ, {}, clear=True):

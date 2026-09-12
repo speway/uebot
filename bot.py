@@ -1117,7 +1117,7 @@ class Bot:
             rows = self.db.execute('SELECT key, value FROM kv WHERE key LIKE ?', (prefix + '%',)).fetchall()
         return [(key, json.loads(value)) for key, value in rows]
 
-    def handle(self, update):
+    def handle(self, update, runtime_oidc_token=None):
         from ai_responder import BOT_USERNAME, is_ai_request, reply_to_update
 
         message = update.get('message', {})
@@ -1145,7 +1145,8 @@ class Bot:
                 snapshot = self.get('week:' + start.isoformat())
                 if snapshot is not None:
                     state['kv']['week:' + start.isoformat()] = snapshot
-            response = reply_to_update(update, state, self.chat_id, username, now)
+            response = reply_to_update(update, state, self.chat_id, username, now,
+                                       runtime_oidc_token)
             if response:
                 reply_parameters = None
                 if message.get('message_id'):

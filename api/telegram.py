@@ -89,7 +89,7 @@ class ReplyCollector:
         return {'message_id': 0}
 
 
-def make_reply(update, state, chat_id):
+def make_reply(update, state, chat_id, runtime_oidc_token=None):
     if not accepts_update(update, chat_id):
         return {'ok': True}
     collector = ReplyCollector()
@@ -98,7 +98,7 @@ def make_reply(update, state, chat_id):
     try:
         for key, value in state.get('kv', {}).items():
             bot.put(key, value)
-        bot.handle(update)
+        bot.handle(update, runtime_oidc_token)
         if not collector.messages:
             return {'ok': True}
         response = collector.messages[0]
@@ -155,10 +155,11 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self):
+        runtime_oidc_token = self.headers.get('X-Vercel-OIDC-Token', '')
         self.respond(200, {
             'service': 'p223-schedule-bot',
             'mode': 'webhook',
-            'ai': 'ready' if provider_ready() else 'unconfigured',
+            'ai': 'ready' if provider_ready(runtime_oidc_token) else 'unconfigured',
         })
 
     def do_POST(self):
@@ -172,22 +173,25 @@ class handler(BaseHTTPRequestHandler):
                 return self.respond(413, {'ok': False})
             update = json.loads(self.rfile.read(size))
             chat_id = int(os.environ['TELEGRAM_CHAT_ID'])
+            runtime_oidc_token = self.headers.get('X-Vercel-OIDC-Token', '')
             if not accepts_update(update, chat_id):
                 return self.respond(200, {'ok': True})
             text = update['message']['text'].strip()
             command = text.split()[0].split('@')[0]
             ai_request = is_ai_request(update, chat_id, BOT_USERNAME)
             if command in ('/start', '/help'):
-                reply = make_reply(update, {'kv': {}}, chat_id)
+                reply = make_reply(update, {'kv': {}}, chat_id, runtime_oidc_token)
                 reply['text'] = reply['text'].replace('\n\n<i>' + STALE_WARNING + '</i>', '')
                 return self.respond(200, reply)
             # Private AI access is allowlisted. Reject it before any source or
             # provider call so a random DM cannot spend the group's budget.
             if ai_request and not private_ai_allowed(update):
-                return self.respond(200, make_reply(update, {'kv': {}}, chat_id))
+                return self.respond(200, make_reply(update, {'kv': {}}, chat_id,
+                                                    runtime_oidc_token))
             # A missing /ask body needs no schedule fetch and no paid request.
             if ai_request and not extract_question(update, BOT_USERNAME)[0]:
-                return self.respond(200, make_reply(update, {'kv': {}}, chat_id))
+                return self.respond(200, make_reply(update, {'kv': {}}, chat_id,
+                                                    runtime_oidc_token))
             source_available = True
             try:
                 state = fetch_state(os.environ['STATE_URL'])
@@ -208,7 +212,7 @@ class handler(BaseHTTPRequestHandler):
                     state = with_live_snapshots(state, EduPage(timeout=timeout, attempts=1).fetch())
                 except Exception:
                     pass
-            self.respond(200, make_reply(update, state, chat_id))
+            self.respond(200, make_reply(update, state, chat_id, runtime_oidc_token))
         except Exception:
             # No message was sent. A failed webhook can be retried safely by Telegram.
             self.respond(503, {'ok': False})
