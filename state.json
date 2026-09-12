@@ -1,6 +1,6 @@
 {
   "kv": {
-    "bot_config_version": 3,
+    "bot_config_version": 5,
     "candidate:week:2026-09-07": null,
     "candidate:week:2026-09-14": null,
     "delivery_attention": false,
