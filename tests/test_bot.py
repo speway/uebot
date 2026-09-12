@@ -1,6 +1,7 @@
 import copy
 import datetime as dt
 import json
+import os
 from pathlib import Path
 import socket
 import tempfile
@@ -8,7 +9,8 @@ import unittest
 
 from bot import (Bot, SourceError, DeliveryError, TelegramRejected, EduPage, TZ,
                  IPv4HTTPSConnection, IPv4HTTPSHandler, digest, ipv4_connection,
-                 parse_week, render_day_reply, render_week, week_caption)
+                 parse_week, render_day_reply, render_week, situational_roast,
+                 week_caption)
 
 META = {'datefrom': '2026-09-07', 'text': '7–12 сентября', 'tt_num': '130'}
 
@@ -16,6 +18,7 @@ META = {'datefrom': '2026-09-07', 'text': '7–12 сентября', 'tt_num': '
 class FakeTelegram:
     def __init__(self):
         self.messages = []
+        self.send_options = []
         self.edits = []
         self.fail = False
 
@@ -23,6 +26,7 @@ class FakeTelegram:
         if self.fail:
             raise RuntimeError('Simulated connection loss')
         self.messages.append((chat, text))
+        self.send_options.append(extra)
         return {'message_id': len(self.messages)}
 
     def call(self, method, **params):
@@ -263,6 +267,23 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(len(self.api.messages), 1)
         self.assertEqual(self.api.messages[0][0], 999)
 
+    def test_polling_ai_reply_targets_the_original_message(self):
+        from unittest.mock import patch
+        from ai_responder import reset_runtime_state
+
+        reset_runtime_state()
+        request = {'update_id': 71, 'message': {
+            'message_id': 72,
+            'chat': {'id': -100123, 'type': 'supergroup'},
+            'from': {'id': 73, 'is_bot': False},
+            'text': '/ask тест',
+        }}
+        with patch.dict(os.environ, {'VERCEL_OIDC_TOKEN': 'test-token'}, clear=True), \
+                patch('ai_responder.generate_answer', return_value='Работает.'):
+            self.bot.handle(request)
+        self.assertIn('Работает.', self.api.messages[-1][1])
+        self.assertEqual(self.api.send_options[-1]['reply_parameters']['message_id'], 72)
+
     def test_weekly_post_is_edited_and_change_is_explained(self):
         self.bot.check([self.week], self.now)
         changed = copy.deepcopy(self.week)
@@ -306,6 +327,7 @@ class ScheduleTests(unittest.TestCase):
         result = render_day_reply(dt.date(2026, 9, 9), items,
                                   dt.datetime(2026, 9, 9, 8, 10, tzinfo=TZ))
         self.assertIn('4 пары · 09:00–16:30', result)
+        self.assertIn('окно 1 ч', result)
         self.assertIn('До первой пары 50 мин', result)
         self.assertIn('2 пары подряд · перерыв 15 мин', result)
 
@@ -318,13 +340,74 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn('2 пары подряд', result)
         self.assertIn('ауд. 313', result)
 
+    def test_current_next_pair_is_not_extended_across_the_break(self):
+        self.bot.put('week:' + self.week['week'], self.week)
+        result = self.bot.next_message(dt.datetime(2026, 9, 7, 9, 45, tzinfo=TZ))
+        self.assertIn('Сейчас идёт', result)
+        self.assertIn('До 10:30 ещё 45 мин', result)
+        self.assertNotIn('09:00–12:15', result)
+
+    def test_when_reports_current_progress_and_real_pair_end(self):
+        self.bot.put('week:' + self.week['week'], self.week)
+        result = self.bot.when_message(dt.datetime(2026, 9, 7, 9, 45, tzinfo=TZ))
+        self.assertIn('Пара уже идёт', result)
+        self.assertIn('До конца: <b>45 мин</b>', result)
+        self.assertIn('пройдено 50%', result)
+        self.assertIn('09:00–10:30', result)
+
+    def test_when_recognizes_the_break_between_identical_pairs(self):
+        self.bot.put('week:' + self.week['week'], self.week)
+        result = self.bot.when_message(dt.datetime(2026, 9, 7, 10, 35, tzinfo=TZ))
+        self.assertIn('Перерыв', result)
+        self.assertIn('Начало через <b>10 мин</b>', result)
+        self.assertIn('10:45–12:15', result)
+
+    def test_free_command_uses_only_a_confirmed_published_week(self):
+        self.bot.put('week:' + self.week['week'], self.week)
+        result = self.bot.free_message(self.now)
+        self.assertIn('Ближайший свободный день', result)
+        self.assertIn('Суббота, 12.09', result)
+        self.assertIn('через 5 дней', result)
+
+    def test_rooms_command_builds_a_compact_chronological_route(self):
+        self.bot.put('week:' + self.week['week'], self.week)
+        result = self.bot.rooms_message(self.now)
+        self.assertIn('Аудитории сегодня', result)
+        self.assertIn('09:00–12:15', result)
+        self.assertIn('ауд. 313', result)
+        self.assertEqual(result.count('Профессиональная этика психолога'), 1)
+
+    def test_roast_command_uses_real_load_and_window_metrics(self):
+        self.bot.put('week:' + self.week['week'], self.week)
+        result = self.bot.roast_message(dt.datetime(2026, 9, 9, 8, 0, tzinfo=TZ))
+        self.assertIn('Академический диагноз', result)
+        self.assertIn('Сегодня 4 пары · 09:00–16:30', result)
+        self.assertIn('Самое большое окно — 1 ч', result)
+        self.assertIn('<b>Вердикт:</b>', result)
+
+    def test_situational_roasts_are_stable_but_not_stuck_on_one_phrase(self):
+        self.assertEqual(situational_roast('free', 'same'), situational_roast('free', 'same'))
+        variants = {situational_roast('free', f'day:{index}') for index in range(30)}
+        self.assertGreater(len(variants), 1)
+
     def test_status_is_diagnostic_but_human(self):
         self.bot.put('last_success', self.now.isoformat())
         result = self.bot.status_message(self.now + dt.timedelta(minutes=7))
         self.assertIn('7 мин назад', result)
         self.assertIn('Источник: отвечает', result)
         self.assertIn('Доставка: без ошибок', result)
-        self.assertIn('хотя бы кто-то', result)
+        self.assertIn('Автопроверка: примерно каждые 5 минут', result)
+        self.assertIn('<i>', result)
+
+    def test_status_summarizes_current_and_unpublished_next_week(self):
+        self.bot.put('week:' + self.week['week'], self.week)
+        empty = copy.deepcopy(self.week)
+        empty['week'] = '2026-09-14'
+        empty['lessons'] = []
+        self.bot.put('week:' + empty['week'], empty)
+        result = self.bot.status_message(self.now)
+        self.assertIn('Эта неделя: 12 пар', result)
+        self.assertIn('Следующая неделя: ещё не опубликована', result)
 
     def test_week_caption_contains_counts_and_checked_time(self):
         result = week_caption(self.week, self.now.isoformat())
@@ -349,8 +432,16 @@ class ScheduleTests(unittest.TestCase):
         empty = copy.deepcopy(self.week)
         empty['lessons'] = []
         self.bot.put('week:' + empty['week'], empty)
-        self.assertIn('ебучие лохи', self.bot.day_messages(self.now.date(), self.now)[0])
-        self.assertIn('ебучие лохи', self.bot.next_message(self.now))
+        replies = [
+            self.bot.day_messages(self.now.date(), self.now)[0],
+            self.bot.next_message(self.now),
+            self.bot.when_message(self.now),
+            self.bot.free_message(self.now),
+            self.bot.rooms_message(self.now),
+            self.bot.roast_message(self.now),
+        ]
+        self.assertTrue(all('Подтверждённого расписания пока нет' in reply for reply in replies))
+        self.assertTrue(all('Это не официальная отмена пар' in reply for reply in replies))
 
     def test_bot_profile_and_command_menu_are_configured_once(self):
         self.bot.configure()
@@ -359,6 +450,9 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(methods.count('setMyCommands'), 1)
         self.assertEqual(methods.count('setMyDescription'), 1)
         self.assertEqual(methods.count('setMyShortDescription'), 1)
+        command_call = next(params for method, params in self.api.edits if method == 'setMyCommands')
+        names = {item['command'] for item in command_call['commands']}
+        self.assertTrue({'ask', 'when', 'free', 'rooms', 'roast'} <= names)
 
 
 if __name__ == '__main__':

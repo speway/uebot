@@ -30,13 +30,98 @@ INTRO = ('Я читаю EduPage за П2‑23, потому что вы, ебу�
          'между выбором группы и кнопкой «следующая неделя».')
 NO_SCHEDULE_ROAST = ('Расписания ещё нет. Так что сидите дальше в неведении, ебучие лохи. '
                      'Как только деканат родит таблицу, я первым испорчу вам настроение.')
-BOT_CONFIG_VERSION = 3
+ROASTS = {
+    'unpublished': (
+        NO_SCHEDULE_ROAST,
+        'Деканат ещё не опубликовал расписание. Сидите красиво и изображайте людей, у которых есть план.',
+        'Будущего в EduPage пока нет. Вы ебучие первопроходцы: идёте в неделю без карты и здравого смысла.',
+        'Расписание не родилось. Пока можете тревожиться по свободному графику, талантливые вы мои.',
+    ),
+    'free': (
+        'Пар нет. Наконец задача, с которой вы справились без методички.',
+        'Свободный день. Можете профессионально ничего не делать — тут у вас уже приличный стаж.',
+        'Сегодня занятий нет. Деканат случайно проявил человечность, не спугните.',
+        'Пар нет. Сделайте удивлённое лицо и срочно продолжайте лежать.',
+    ),
+    'early': (
+        'Первая пара ранняя. Ваши утренние лица снова станут аргументом против естественного отбора.',
+        'Будильник ставьте сейчас: утром ваш мозг традиционно объявит себя недоступным.',
+        'Начало раннее. Солнце ещё сомневается, а вас уже решили наказать.',
+        'Придётся встать до того, как личность полностью загрузится. Соболезную всем очевидцам.',
+    ),
+    'heavy': (
+        'День плотный. К вечеру от личности останутся студенческий и слабый пульс.',
+        'Пар дохуя. Деканат аккуратно упаковал страдания и даже не приложил инструкцию.',
+        'Сегодня учебный марафон. Победителю достанется право уснуть в одежде.',
+        'Нагрузка солидная. Самое время выяснить, сколько пар выдерживает один потрёпанный студент.',
+    ),
+    'window': (
+        'В расписании окно: достаточно длинное, чтобы начать курсовую, и достаточно короткое, чтобы снова ничего не сделать.',
+        'Есть окно. Не потеряйтесь в нём — пространственное мышление у группы и так под наблюдением.',
+        'Между парами дыра. Можно поесть, поныть и героически не успеть обратно.',
+        'Окно найдено. Деканат подарил вам время, которое вы всё равно спустите в телефон.',
+    ),
+    'normal': (
+        'Нагрузка терпимая. Но вы всё равно найдёте способ устать так, будто разгружали вагоны.',
+        'Обычный учебный день: ничего смертельного, кроме желания туда идти.',
+        'Расписание щадящее. Постарайтесь хотя бы не проиграть ему по очкам.',
+        'Сегодня без особого пиздеца. Не переживайте, вы ещё можете организовать его самостоятельно.',
+    ),
+    'current': (
+        'Пара уже идёт. Если читаешь это из кровати — эксперимент по последствиям начался успешно.',
+        'Сейчас бы слушать преподавателя, но ты консультируешься с ботом. Академический приоритет впечатляет.',
+        'Время идёт, пара тоже. Надеюсь, хотя бы один из вас находится в нужной аудитории.',
+        'Занятие в процессе. Сделай умное лицо — иногда система принимает и такой отчёт.',
+    ),
+    'break': (
+        'Сейчас перерыв. Главное — не превратить его в самовольный академический отпуск.',
+        'До следующей пары есть время. Не проебите его вместе с дорогой до аудитории.',
+        'Пауза между страданиями. Пользуйтесь, пока образовательный процесс отвернулся.',
+        'Идёт перерыв. Мозг можно перезапустить, если вы вообще взяли его с собой.',
+    ),
+    'done': (
+        'На сегодня всё. Организм можно снять с учебного дежурства.',
+        'Пары закончились. Вы великолепно пережили то, куда могли вообще не прийти.',
+        'Учебный пиздец на сегодня закрыт. Касса тоже, жалобы завтра.',
+        'Свобода до следующей пары. Используйте её бездарно, как умеете.',
+    ),
+    'rooms': (
+        'Маршрут построен. Заблудиться теперь можно только из принципа.',
+        'Аудитории выписал. Осталось совершить невозможное — реально до них дойти.',
+        'Координаты есть. Если придёте не туда, валить на интерфейс уже поздно.',
+        'Все кабинеты перед глазами. Пространственный долбоебизм теперь не алиби.',
+    ),
+    'healthy': (
+        'Жив, работаю, ничего не проебал. В этой группе хотя бы кто-то.',
+        'Все системы в норме. Можете продолжать ломаться самостоятельно.',
+        'Источник читается, доставка работает. Непривычно, но не пугайтесь.',
+        'Бот здоров. Осталось провести такую же диагностику вашей дисциплины.',
+    ),
+    'source_error': (
+        'Показываю сохранённое. Если попрётесь вслепую — это уже ваш личный долбоебизм.',
+        'EduPage временно лежит. Я сохранил последнее расписание, потому что кто-то здесь предусмотрительный.',
+        'Источник не отвечает. Старые данные целы; паниковать разрешается строго по очереди.',
+        'EduPage ушёл подумать о своём поведении. Пока живём по последней подтверждённой версии.',
+    ),
+    'delivery_error': (
+        'Расписание сохранилось, но Telegram устроил «доставил — не доставил». Ебучий квантовый курьер.',
+        'Данные на месте, доставка требует проверки. Даже сообщения иногда боятся идти в эту группу.',
+        'Источник отработал, Telegram споткнулся. Технологии тоже иногда ведут себя как студенты.',
+        'Расписание сохранено, а доставка обосралась. Администратору оставлен диагноз без латыни.',
+    ),
+}
+BOT_CONFIG_VERSION = 5
 BOT_COMMANDS = [
     {'command': 'today', 'description': 'Какой сегодня учебный пиздец'},
     {'command': 'tomorrow', 'description': 'Чем испортят завтрашний день'},
     {'command': 'next', 'description': 'Куда тащиться следующим'},
+    {'command': 'ask', 'description': 'Спроси что угодно, если думать лень'},
+    {'command': 'when', 'description': 'Сколько до начала или конца пары'},
+    {'command': 'free', 'description': 'Когда ближайший свободный день'},
+    {'command': 'rooms', 'description': 'Аудитории на сегодня без квеста'},
     {'command': 'week', 'description': 'Вся неделя одним страданием'},
     {'command': 'nextweek', 'description': 'Будущее, если его опубликовали'},
+    {'command': 'roast', 'description': 'Вердикт по сегодняшнему пиздецу'},
     {'command': 'status', 'description': 'Кто опять обосрался'},
     {'command': 'help', 'description': 'Инструкция для самых потерянных'},
 ]
@@ -77,6 +162,58 @@ def plural_ru(number, one, few, many):
 
 def clean_spaces(value):
     return re.sub(r'\s+', ' ', str(value or '')).strip()
+
+
+def situational_roast(kind, seed=''):
+    """Choose varied but stable copy, so rerenders never create random edits."""
+    options = ROASTS[kind]
+    fingerprint = hashlib.sha256(f'{kind}:{seed}'.encode()).digest()
+    return options[int.from_bytes(fingerprint[:4], 'big') % len(options)]
+
+
+def minutes_text(minutes):
+    minutes = max(0, int(minutes))
+    hours, minutes = divmod(minutes, 60)
+    if hours and minutes:
+        return f'{hours} ч {minutes} мин'
+    if hours:
+        return f'{hours} ч'
+    return f'{minutes} мин'
+
+
+def day_metrics(lessons):
+    """Return exact day boundaries and real long windows, excluding normal breaks."""
+    intervals = []
+    for item in sorted(lessons, key=lambda value: (value['start'], value['end'])):
+        start = int(item['start'][:2]) * 60 + int(item['start'][3:])
+        end = int(item['end'][:2]) * 60 + int(item['end'][3:])
+        if end > start:
+            if intervals and start <= intervals[-1][1]:
+                intervals[-1][1] = max(intervals[-1][1], end)
+            else:
+                intervals.append([start, end])
+    if not intervals:
+        return {'first': '', 'last': '', 'windows': [], 'largest_window': 0, 'window_total': 0}
+    gaps = [current[0] - previous[1] for previous, current in zip(intervals, intervals[1:])]
+    windows = [gap for gap in gaps if gap >= 30]
+    return {
+        'first': f'{intervals[0][0] // 60:02d}:{intervals[0][0] % 60:02d}',
+        'last': f'{intervals[-1][1] // 60:02d}:{intervals[-1][1] % 60:02d}',
+        'windows': windows,
+        'largest_window': max(windows, default=0),
+        'window_total': sum(windows),
+    }
+
+
+def day_roast_kind(lessons):
+    metrics = day_metrics(lessons)
+    if len(lessons) >= 4:
+        return 'heavy'
+    if metrics['windows']:
+        return 'window'
+    if metrics['first'] and metrics['first'] < '10:00':
+        return 'early'
+    return 'normal'
 
 
 def merge_adjacent_lessons(lessons):
@@ -350,7 +487,15 @@ def render_day(date, lessons):
     if lessons:
         count = len(lessons)
         pair_word = plural_ru(count, 'пара', 'пары', 'пар')
-        lines[0] += f"\n{count} {pair_word} · {lessons[0]['start']}–{lessons[-1]['end']}"
+        metrics = day_metrics(lessons)
+        lines[0] += f"\n{count} {pair_word} · {metrics['first']}–{metrics['last']}"
+        if metrics['windows']:
+            window_count = len(metrics['windows'])
+            if window_count == 1:
+                lines[0] += f" · окно {minutes_text(metrics['largest_window'])}"
+            else:
+                word = plural_ru(window_count, 'окно', 'окна', 'окон')
+                lines[0] += f" · {window_count} {word}, всего {minutes_text(metrics['window_total'])}"
     # Merge adjacent pairs only for display; keep individual pairs in the change detector.
     merged = merge_adjacent_lessons(lessons)
     for item in merged:
@@ -377,30 +522,31 @@ def short_wait(delta):
 
 
 def day_tease(date, lessons, now):
-    """Useful timing first, friendly roast second."""
+    """Useful timing first, situational roast second."""
     if not lessons:
-        return 'Свободный день. Продолжайте делать вид, что именно сегодня вы закроете все дедлайны.'
+        return situational_roast('free', 'day:' + date.isoformat())
     lessons = sorted(lessons, key=lambda item: (item['start'], item['end'], item['subject']))
-    start = dt.datetime.combine(date, dt.time.fromisoformat(lessons[0]['start']), TZ)
-    end = dt.datetime.combine(date, dt.time.fromisoformat(lessons[-1]['end']), TZ)
+    metrics = day_metrics(lessons)
+    start = dt.datetime.combine(date, dt.time.fromisoformat(metrics['first']), TZ)
+    end = dt.datetime.combine(date, dt.time.fromisoformat(metrics['last']), TZ)
+    seed = f'day:{date.isoformat()}:{len(lessons)}:{metrics["largest_window"]}'
+    day_kind = day_roast_kind(lessons)
     if date > now.date():
-        return (f"Первая пара в {lessons[0]['start']}. Будильник поставь сейчас: "
-                'утренний ты — ленивый долбоёб с доступом к кнопке «отложить».')
+        return f"Первая пара в {lessons[0]['start']}. {situational_roast(day_kind, seed)}"
     if date < now.date() or now >= end:
-        return 'На сегодня всё. Академический пиздец пережит, можно ползти восстанавливаться.'
+        return situational_roast('done', seed)
     if now < start:
-        return (f'До первой пары {short_wait(start - now)}. Успеешь собраться, поныть '
-                'и всё равно выйти в последний момент.')
+        return f'До первой пары {short_wait(start - now)}. {situational_roast(day_kind, seed)}'
     for item in lessons:
         item_start = dt.datetime.combine(date, dt.time.fromisoformat(item['start']), TZ)
         item_end = dt.datetime.combine(date, dt.time.fromisoformat(item['end']), TZ)
         if item_start <= now < item_end:
             return (f"Сейчас идёт «{clean_spaces(item['subject'])}» — до {item['end']}. "
-                    'Сделай умное лицо, вдруг прокатит.')
+                    + situational_roast('current', seed + ':' + item['start']))
         if now < item_start:
             return (f"Следующая в {item['start']} — через {short_wait(item_start - now)}. "
-                    'Не проеби дорогу, навигатор из тебя как из деканата UX-дизайнер.')
-    return 'На сегодня всё. Академический пиздец пережит, можно ползти восстанавливаться.'
+                    + situational_roast('break', seed + ':' + item['start']))
+    return situational_roast('done', seed)
 
 
 def render_day_reply(date, lessons, now):
@@ -408,6 +554,13 @@ def render_day_reply(date, lessons, now):
     label = 'Сегодня' if delta == 0 else 'Завтра' if delta == 1 else DAYS[date.weekday()]
     return (f'<b>П2‑23 · {label}</b>\n\n{render_day(date.isoformat(), lessons)}\n\n'
             f'<i>{html.escape(day_tease(date, lessons, now))}</i>')
+
+
+def unpublished_reply(title, seed):
+    return (f'<b>{html.escape(title)}</b>\n\nПодтверждённого расписания пока нет.\n\n'
+            f'<i>{html.escape(situational_roast("unpublished", seed))}</i>\n\n'
+            'Это не официальная отмена пар — не начинайте радоваться без бумажки.\n'
+            f'<a href="{SOURCE}/timetable/">Проверить источник</a>')
 
 
 def render_week(snapshot):
@@ -596,7 +749,7 @@ class Bot:
         with self.lock, self.db:
             self.db.execute('INSERT OR REPLACE INTO kv VALUES (?,?)', (key, json.dumps(value, ensure_ascii=False)))
 
-    def send_once(self, key, text, chat_id=None):
+    def send_once(self, key, text, chat_id=None, **send_options):
         prior = self.get('sent:' + key)
         if prior:
             if prior.get('status') == 'pending':
@@ -606,7 +759,8 @@ class Bot:
         self.put('sent:' + key, {'status': 'pending'})
         try:
             quiet = dt.datetime.now(TZ).hour < 7 or dt.datetime.now(TZ).hour >= 23
-            result = self.tg.send(self.chat_id if chat_id is None else chat_id, text, disable_notification=quiet)
+            result = self.tg.send(self.chat_id if chat_id is None else chat_id, text,
+                                  disable_notification=quiet, **send_options)
         except TelegramRejected:
             self.put('sent:' + key, None)
             raise
@@ -622,10 +776,10 @@ class Bot:
             return
         self.tg.call('setMyCommands', commands=BOT_COMMANDS)
         self.tg.call('setMyDescription', description=(
-            'Расписание П2‑23 без ебучего квеста по EduPage: сегодня, завтра, неделя картинкой, '
-            'изменения и напоминания. Подкалывает, потому что кто-то же должен вас воспитывать.'))
+            'Расписание П2‑23 без ебучего квеста по EduPage: пары, аудитории, окна, свободные дни, '
+            'обратный отсчёт, изменения и AI-ответы. Подкалывает, потому что кто-то же должен вас воспитывать.'))
         self.tg.call('setMyShortDescription', short_description=(
-            'Расписание П2‑23. Ищу пары, пока вы ищете оправдание очередному опозданию.'))
+            'Пары и AI для П2‑23. Ищу всё, кроме оправданий вашему опозданию.'))
         self.put('bot_config_version', BOT_CONFIG_VERSION)
 
     def publish_week(self, snapshot):
@@ -747,10 +901,112 @@ class Bot:
         snapshot = self.get('week:' + monday.isoformat())
         if not snapshot or not snapshot['lessons']:
             label = 'сегодня' if date == now.date() else 'завтра' if date == now.date() + dt.timedelta(days=1) else date.strftime('%d.%m')
-            return [f'<b>П2‑23 · {label.capitalize()}</b>\n\n{NO_SCHEDULE_ROAST}\n\n'
-                    f'<a href="{SOURCE}/timetable/">Проверить источник</a>']
+            return [unpublished_reply('П2‑23 · ' + label.capitalize(), 'day:' + date.isoformat())]
         items = [x for x in snapshot['lessons'] if x['date'] == date.isoformat()]
         return [render_day_reply(date, items, now)]
+
+    def when_message(self, now=None):
+        now = now or dt.datetime.now(TZ)
+        date = now.date()
+        monday = date - dt.timedelta(days=date.weekday())
+        snapshot = self.get('week:' + monday.isoformat())
+        if not snapshot or not snapshot.get('lessons'):
+            return unpublished_reply('П2‑23 · Когда уже?', 'when:' + date.isoformat())
+        lessons = sorted((item for item in snapshot['lessons'] if item['date'] == date.isoformat()),
+                         key=lambda item: (item['start'], item['end'], item['subject']))
+        if not lessons:
+            return (f'<b>П2‑23 · Когда уже?</b>\n\nСегодня пар нет. Таймер страданий не запущен.\n\n'
+                    f'<i>{html.escape(situational_roast("free", "when:" + date.isoformat()))}</i>')
+        seed = 'when:' + date.isoformat()
+        for item in lessons:
+            start = dt.datetime.combine(date, dt.time.fromisoformat(item['start']), TZ)
+            end = dt.datetime.combine(date, dt.time.fromisoformat(item['end']), TZ)
+            if start <= now < end:
+                duration = max(1, int((end - start).total_seconds()))
+                progress = min(99, int((now - start).total_seconds() * 100 / duration))
+                return (f'<b>П2‑23 · Пара уже идёт</b>\n\n{lesson_text(item)}\n\n'
+                        f'До конца: <b>{short_wait(end - now)}</b> · пройдено {progress}%\n\n'
+                        f'<i>{html.escape(situational_roast("current", seed + ":" + item["start"]))}</i>')
+            if now < start:
+                had_lesson = any(
+                    dt.datetime.combine(date, dt.time.fromisoformat(previous['end']), TZ) <= now
+                    for previous in lessons
+                )
+                heading = 'Перерыв' if had_lesson else 'До первой пары'
+                roast_kind = 'break' if had_lesson else day_roast_kind(lessons)
+                return (f'<b>П2‑23 · {heading}</b>\n\nНачало через <b>{short_wait(start - now)}</b> · '
+                        f'в {item["start"]}\n\n{lesson_text(item)}\n\n'
+                        f'<i>{html.escape(situational_roast(roast_kind, seed + ":" + item["start"]))}</i>')
+        metrics = day_metrics(lessons)
+        return (f'<b>П2‑23 · На сегодня отстрелялись</b>\n\nПоследняя пара закончилась в '
+                f'<b>{metrics["last"]}</b>.\n\n'
+                f'<i>{html.escape(situational_roast("done", seed))}</i>')
+
+    def free_message(self, now=None):
+        now = now or dt.datetime.now(TZ)
+        for offset in range(14):
+            date = now.date() + dt.timedelta(days=offset)
+            if date.weekday() == 6:
+                continue  # Sunday is not presented as a special timetable discovery.
+            monday = date - dt.timedelta(days=date.weekday())
+            snapshot = self.get('week:' + monday.isoformat())
+            if not snapshot or not snapshot.get('lessons'):
+                continue  # An unpublished week is unknown, not six free days.
+            if any(item['date'] == date.isoformat() for item in snapshot['lessons']):
+                continue
+            if offset == 0:
+                when = 'Сегодня'
+            elif offset == 1:
+                when = 'Завтра'
+            else:
+                when = DAYS[date.weekday()]
+            distance = '' if offset < 2 else f' · через {offset} {plural_ru(offset, "день", "дня", "дней")}'
+            return (f'<b>П2‑23 · Ближайший свободный день</b>\n\n'
+                    f'<b>{when}, {date:%d.%m}</b>{distance}\nПодтверждённых пар нет.\n\n'
+                    f'<i>{html.escape(situational_roast("free", "free:" + date.isoformat()))}</i>')
+        return unpublished_reply('П2‑23 · Ближайший свободный день', 'free:' + now.date().isoformat())
+
+    def rooms_message(self, now=None):
+        now = now or dt.datetime.now(TZ)
+        date = now.date()
+        monday = date - dt.timedelta(days=date.weekday())
+        snapshot = self.get('week:' + monday.isoformat())
+        if not snapshot or not snapshot.get('lessons'):
+            return unpublished_reply('П2‑23 · Аудитории сегодня', 'rooms:' + date.isoformat())
+        lessons = [item for item in snapshot['lessons'] if item['date'] == date.isoformat()]
+        if not lessons:
+            return (f'<b>П2‑23 · Аудитории сегодня</b>\n\nСегодня никуда тащиться не надо: пар нет.\n\n'
+                    f'<i>{html.escape(situational_roast("free", "rooms:" + date.isoformat()))}</i>')
+        sections = [f'<b>П2‑23 · Аудитории сегодня</b>\n{date:%d.%m.%Y}']
+        for item in merge_adjacent_lessons(lessons):
+            rooms = ', '.join(item.get('rooms', [])) or 'не указана'
+            sections.append(f'<b>{html.escape(item["start"])}–{html.escape(item["end"])}</b> · '
+                            f'ауд. {html.escape(rooms)}\n{html.escape(clean_spaces(item["subject"]))}')
+        sections.append('<i>' + html.escape(situational_roast('rooms', 'rooms:' + date.isoformat())) + '</i>')
+        return '\n\n'.join(sections)
+
+    def roast_message(self, now=None):
+        now = now or dt.datetime.now(TZ)
+        date = now.date()
+        monday = date - dt.timedelta(days=date.weekday())
+        snapshot = self.get('week:' + monday.isoformat())
+        if not snapshot or not snapshot.get('lessons'):
+            return unpublished_reply('П2‑23 · Академический диагноз', 'roast:' + date.isoformat())
+        lessons = [item for item in snapshot['lessons'] if item['date'] == date.isoformat()]
+        if not lessons:
+            facts = 'Сегодня 0 пар. Медицинское чудо: расписание вам не навредило.'
+            kind = 'free'
+        else:
+            metrics = day_metrics(lessons)
+            count = len(lessons)
+            facts = (f"Сегодня {count} {plural_ru(count, 'пара', 'пары', 'пар')} · "
+                     f"{metrics['first']}–{metrics['last']}.")
+            if metrics['windows']:
+                facts += f" Самое большое окно — {minutes_text(metrics['largest_window'])}."
+            kind = day_roast_kind(lessons)
+        verdict = situational_roast(kind, f'roast:{date.isoformat()}:{len(lessons)}')
+        return (f'<b>П2‑23 · Академический диагноз</b>\n\n{html.escape(facts)}\n\n'
+                f'<b>Вердикт:</b> <i>{html.escape(verdict)}</i>')
 
     def next_message(self, now=None):
         now = now or dt.datetime.now(TZ)
@@ -767,21 +1023,36 @@ class Bot:
             if end > now:
                 future_lessons.append(item)
         if not future_lessons:
-            return (f'<b>П2‑23 · Что дальше?</b>\n\n{NO_SCHEDULE_ROAST}\n\n'
-                    '<i>Свободу пока не празднуйте: отсутствие расписания не является справкой об отмене пар.</i>')
-        blocks = merge_adjacent_lessons(future_lessons)
-        item = min(blocks, key=lambda value: (value['date'], value['start'], value['subject']))
+            return unpublished_reply('П2‑23 · Что дальше?', 'next:' + now.date().isoformat())
+        active = []
+        for item in future_lessons:
+            date = dt.date.fromisoformat(item['date'])
+            start = dt.datetime.combine(date, dt.time.fromisoformat(item['start']), TZ)
+            end = dt.datetime.combine(date, dt.time.fromisoformat(item['end']), TZ)
+            if start <= now < end:
+                active.append(item)
+        if active:
+            # Do not merge a current pair with the next one: the ordinary
+            # 15-minute break must not be reported as ongoing class time.
+            item = min(active, key=lambda value: (value['date'], value['start'], value['subject']))
+        else:
+            blocks = merge_adjacent_lessons(future_lessons)
+            item = min(blocks, key=lambda value: (value['date'], value['start'], value['subject']))
         date = dt.date.fromisoformat(item['date'])
         start = dt.datetime.combine(date, dt.time.fromisoformat(item['start']), TZ)
         end = dt.datetime.combine(date, dt.time.fromisoformat(item['end']), TZ)
         if start <= now < end:
             heading = 'Сейчас идёт'
             timing = f"До {item['end']} ещё {short_wait(end - now)}"
+            tease = situational_roast('current', f'next:{date.isoformat()}:{item["start"]}')
         else:
             heading = 'Следующая пара'
             day_delta = (start.date() - now.date()).days
             when = 'сегодня' if day_delta == 0 else 'завтра' if day_delta == 1 else DAYS[start.weekday()].lower()
             timing = f"{when}, {start:%d.%m} в {item['start']} · через {short_wait(start - now)}"
+            same_day = [lesson for lesson in lessons if lesson['date'] == item['date']]
+            tease = situational_roast(day_roast_kind(same_day),
+                                      f'next:{date.isoformat()}:{item["start"]}')
         pair_line = ''
         if item.get('_pairs', 1) > 1:
             count = item['_pairs']
@@ -789,9 +1060,11 @@ class Bot:
             if item.get('_break'):
                 pair_line += f" · перерыв {item['_break']} мин"
         return (f'<b>П2‑23 · {heading}</b>\n{html.escape(timing)}\n\n{lesson_text(item)}{pair_line}\n\n'
-                '<i>Теперь опоздание можно списать только на твою охуенную организованность.</i>')
+                f'<i>{html.escape(tease)}</i>')
 
     def status_message(self, now=None):
+        from ai_responder import provider_ready
+
         now = now or dt.datetime.now(TZ)
         success = self.get('last_success')
         checked = None
@@ -808,19 +1081,35 @@ class Bot:
         source_problem = bool(self.last_error or self.get('source_error'))
         delivery_problem = bool(self.get('delivery_attention'))
         pending = any(value for key, value in self._items('candidate:') if value)
+        monday = now.date() - dt.timedelta(days=now.date().weekday())
+
+        def week_status(start):
+            snapshot = self.get('week:' + start.isoformat())
+            if not snapshot:
+                return 'нет подтверждённых данных'
+            count = len(snapshot.get('lessons', []))
+            if not count:
+                return 'ещё не опубликована'
+            return f"{count} {plural_ru(count, 'пара', 'пары', 'пар')}"
+
         lines = [
             '<b>П2‑23 · Статус бота</b>',
             'Последняя проверка: ' + checked_text,
             'Источник: ' + ('временно не отвечает' if source_problem else 'отвечает'),
             'Изменения: ' + ('проверяю повторно' if pending else 'не замечены'),
             'Доставка: ' + ('нужна проверка администратором' if delivery_problem else 'без ошибок'),
+            'Эта неделя: ' + week_status(monday),
+            'Следующая неделя: ' + week_status(monday + dt.timedelta(days=7)),
+            'AI-ответы: ' + ('готовы' if provider_ready() else 'ждут настройки'),
+            'Автопроверка: примерно каждые 5 минут',
         ]
         if source_problem:
-            lines.append('\n<i>Показываю сохранённое. Если попрётесь вслепую — это уже ваш личный долбоебизм.</i>')
+            roast = situational_roast('source_error', 'status:' + now.date().isoformat())
         elif delivery_problem:
-            lines.append('\n<i>Расписание сохранилось, но Telegram устроил «доставил — не доставил». Ебучий квантовый курьер.</i>')
+            roast = situational_roast('delivery_error', 'status:' + now.date().isoformat())
         else:
-            lines.append('\n<i>Жив, работаю, ничего не проебал. В этой группе хотя бы кто-то.</i>')
+            roast = situational_roast('healthy', 'status:' + now.date().isoformat())
+        lines.append('\n<i>' + html.escape(roast) + '</i>')
         return '\n'.join(lines)
 
     def _items(self, prefix):
@@ -829,13 +1118,43 @@ class Bot:
         return [(key, json.loads(value)) for key, value in rows]
 
     def handle(self, update):
+        from ai_responder import BOT_USERNAME, is_ai_request, reply_to_update
+
         message = update.get('message', {})
         destination = int(message.get('chat', {}).get('id', 0))
         private = message.get('chat', {}).get('type') == 'private'
         if not message or (destination != self.chat_id and not private):
             return
         text = message.get('text', '').strip()
-        if not text.startswith('/'):
+        username = self.username or BOT_USERNAME
+        ai_request = is_ai_request(update, self.chat_id, username)
+        if not text.startswith('/') and not ai_request:
+            return
+        if ai_request:
+            reply_key = 'reply:' + str(update.get('update_id', 0)) + ':0'
+            if self.get('sent:' + reply_key):
+                return
+            now = dt.datetime.now(TZ)
+            monday = now.date() - dt.timedelta(days=now.date().weekday())
+            state = {'schema': 1, 'kv': {
+                'last_success': self.get('last_success'),
+                'source_error': self.get('source_error'),
+            }}
+            for offset in (0, 7):
+                start = monday + dt.timedelta(days=offset)
+                snapshot = self.get('week:' + start.isoformat())
+                if snapshot is not None:
+                    state['kv']['week:' + start.isoformat()] = snapshot
+            response = reply_to_update(update, state, self.chat_id, username, now)
+            if response:
+                reply_parameters = None
+                if message.get('message_id'):
+                    reply_parameters = {
+                        'message_id': message['message_id'],
+                        'allow_sending_without_reply': True,
+                    }
+                options = {'reply_parameters': reply_parameters} if reply_parameters else {}
+                self.send_once(reply_key, response, destination, **options)
             return
         command = text.split()[0]
         if '@' in command:
@@ -853,6 +1172,14 @@ class Bot:
             messages = self.day_messages(today + dt.timedelta(days=command == '/tomorrow'), now)
         elif command == '/next':
             messages = [self.next_message(now)]
+        elif command == '/when':
+            messages = [self.when_message(now)]
+        elif command == '/free':
+            messages = [self.free_message(now)]
+        elif command == '/rooms':
+            messages = [self.rooms_message(now)]
+        elif command == '/roast':
+            messages = [self.roast_message(now)]
         elif command in ('/week', '/nextweek'):
             monday = today - dt.timedelta(days=today.weekday()) + dt.timedelta(days=7 if command == '/nextweek' else 0)
             snapshot = self.get('week:' + monday.isoformat())
@@ -863,9 +1190,17 @@ class Bot:
             messages = ['<b>П2‑23 · Уебот</b>\n\n' + INTRO +
                         '\n\n/today — какой сегодня учебный пиздец\n'
                         '/tomorrow — чем испортят завтрашний день\n'
-                        '/next — куда тащиться следующим\n/week — вся неделя одним страданием\n'
+                        '/next — куда тащиться следующим\n'
+                        '/ask &lt;вопрос&gt; — спросить AI о чём угодно\n'
+                        '/when — сколько до начала или конца текущей пары\n'
+                        '/free — ближайший свободный учебный день\n'
+                        '/rooms — аудитории на сегодня без квеста\n'
+                        '/roast — диагноз сегодняшней учебной нагрузке\n'
+                        '/week — вся неделя одним страданием\n'
                         '/nextweek — будущее, если деканат его высрал\n'
                         '/status — кто опять обосрался\n\n'
+                        'В группе AI отвечает только на /ask, прямое @упоминание или ответ на моё сообщение — '
+                        'в чужой трёп без приглашения не лезу.\n\n'
                         'Изменение публикую только после повторной проверки, чтобы одна галлюцинация '
                         'EduPage не погнала всю толпу долбоёбов в пустую аудиторию. Вечером напоминаю пары на завтра. '
                         f'Время Ташкента.\n<a href="{SOURCE}/timetable/">Открыть первоисточник</a>']

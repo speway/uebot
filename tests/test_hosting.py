@@ -3,9 +3,12 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
+from ai_responder import reset_runtime_state
 from api.source import authorized
-from api.telegram import make_reply, accepts_update, state_is_stale, with_live_snapshots
+from api.telegram import (accepts_update, fetch_state, make_reply, state_is_stale,
+                          with_live_snapshots)
 from bot import SourceError, TZ, parse_week
 from github_runner import (GitStateBot, KNOWN_FALSE_WEEK_DIGEST, checked_recently,
                            check_with_confirmation, git, refresh_stored_publications,
@@ -14,6 +17,31 @@ from test_bot import FakeTelegram, META
 
 
 class HostingTests(unittest.TestCase):
+    def test_public_snapshot_loader_validates_schema_and_size(self):
+        class Response:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, _limit):
+                return self.payload
+
+        valid = json.dumps({'schema': 1, 'kv': {'last_success': 'now'}}).encode()
+        state = fetch_state('https://raw.githubusercontent.com/a/b/main/state.json',
+                            opener=lambda *_args, **_kwargs: Response(valid))
+        self.assertEqual(state['kv']['last_success'], 'now')
+        with self.assertRaises(ValueError):
+            fetch_state('https://example.com/state.json',
+                        opener=lambda *_args, **_kwargs: Response(valid))
+        with self.assertRaises(ValueError):
+            fetch_state('https://raw.githubusercontent.com/a/b/main/state.json',
+                        opener=lambda *_args, **_kwargs: Response(b'x' * 1048577))
+
     def test_rapid_source_checks_are_skipped_but_normal_cron_is_not(self):
         now = dt.datetime(2026, 9, 10, 21, 0, tzinfo=TZ)
         self.assertTrue(checked_recently((now - dt.timedelta(minutes=2)).isoformat(), now))
@@ -169,6 +197,41 @@ class HostingTests(unittest.TestCase):
         update = {'message': {'chat': {'id': -100123, 'type': 'supergroup'},
                               'text': '/next@msutf_p223_schedule_bot'}}
         self.assertTrue(accepts_update(update, -100123))
+
+    def test_new_utility_commands_are_accepted(self):
+        for command in ('ask', 'when', 'free', 'rooms', 'roast'):
+            update = {'message': {'chat': {'id': -100123, 'type': 'supergroup'},
+                                  'from': {'id': 42},
+                                  'text': f'/{command}@msutf_p223_schedule_bot вопрос'}}
+            self.assertTrue(accepts_update(update, -100123))
+
+    def test_group_ai_mentions_and_replies_are_accepted_but_chatter_is_not(self):
+        base = {'chat': {'id': -100123, 'type': 'supergroup'},
+                'from': {'id': 42, 'is_bot': False}}
+        mention = dict(base, text='@msutf_p223_schedule_bot ответь нормально')
+        reply = dict(base, text='а почему?', reply_to_message={
+            'from': {'id': 999, 'is_bot': True, 'username': 'msutf_p223_schedule_bot'},
+            'text': 'ответ бота',
+        })
+        self.assertTrue(accepts_update({'message': mention}, -100123))
+        self.assertTrue(accepts_update({'message': reply}, -100123))
+        self.assertFalse(accepts_update({'message': dict(base, text='обычный трёп')}, -100123))
+
+    def test_ai_reply_targets_the_question_and_never_adds_schedule_stale_copy(self):
+        reset_runtime_state()
+        request = {'update_id': 701, 'message': {
+            'message_id': 88,
+            'chat': {'id': -100123, 'type': 'supergroup'},
+            'from': {'id': 707, 'is_bot': False},
+            'text': '/ask почему небо синее?',
+        }}
+        with patch.dict('os.environ', {'VERCEL_OIDC_TOKEN': 'test-token'}, clear=True), \
+                patch('ai_responder.generate_answer', return_value='Из-за рассеяния света.'):
+            result = make_reply(request, {'kv': {}}, -100123)
+        self.assertEqual(result['reply_parameters']['message_id'], 88)
+        self.assertTrue(result['reply_parameters']['allow_sending_without_reply'])
+        self.assertIn('Из-за рассеяния света.', result['text'])
+        self.assertNotIn('Автопроверка задержалась', result['text'])
 
     def test_stale_state_can_be_overlaid_with_live_schedule(self):
         old = {'schema': 1, 'kv': {'last_success': '2026-09-10T00:00:00+05:00',

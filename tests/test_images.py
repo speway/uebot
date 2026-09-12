@@ -35,7 +35,7 @@ class ImageTests(unittest.TestCase):
                          ('09:00','12:15',2))
 
     def test_design_version_forces_existing_photos_to_refresh(self):
-        self.assertGreaterEqual(DESIGN_VERSION,4)
+        self.assertGreaterEqual(DESIGN_VERSION,5)
 
     def test_week_webhook_reuses_photo(self):
         now=dt.datetime.now(TZ);monday=now.date()-dt.timedelta(days=now.weekday())

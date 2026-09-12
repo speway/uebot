@@ -7,6 +7,8 @@ import os
 import time
 import urllib.request
 
+from ai_responder import (BOT_USERNAME, extract_question, is_ai_request,
+                          private_ai_allowed, provider_ready)
 from bot import Bot, EduPage, TZ, week_caption
 
 
@@ -20,14 +22,18 @@ def accepts_update(update, chat_id):
         return False
     message = update.get('message') or {}
     chat = message.get('chat') or {}
+    if (message.get('from') or {}).get('is_bot'):
+        return False
     if chat.get('id') != chat_id and chat.get('type') != 'private':
         return False
     parts = (message.get('text') or '').strip().split()
     if not parts:
         return False
     command, _, address = parts[0].partition('@')
-    return (command in ('/start', '/help', '/today', '/tomorrow', '/next', '/week', '/nextweek', '/status')
-            and (not address or address.lower() == 'msutf_p223_schedule_bot'))
+    known_command = (command in ('/start', '/help', '/today', '/tomorrow', '/next', '/when',
+                                 '/free', '/rooms', '/week', '/nextweek', '/roast', '/status')
+                     and (not address or address.lower() == BOT_USERNAME))
+    return known_command or is_ai_request(update, chat_id, BOT_USERNAME)
 
 
 def state_is_stale(state, now=None):
@@ -53,6 +59,26 @@ def with_live_snapshots(state, snapshots, now=None):
     return result
 
 
+def fetch_state(url, opener=None):
+    """Read and validate the bounded public schedule snapshot."""
+    if not url.startswith('https://raw.githubusercontent.com/'):
+        raise ValueError('STATE_URL must point to the public schedule snapshot')
+    separator = '&' if '?' in url else '?'
+    request = urllib.request.Request(
+        url + separator + 'minute=' + str(int(time.time() // 60)),
+        headers={'Cache-Control': 'no-cache', 'User-Agent': 'P223ScheduleBot/1.0'},
+    )
+    opener = opener or urllib.request.urlopen
+    with opener(request, timeout=12) as response:
+        data = response.read(1048577)
+    if len(data) > 1048576:
+        raise ValueError('Snapshot too large')
+    state = json.loads(data)
+    if state.get('schema') != 1 or not isinstance(state.get('kv'), dict):
+        raise ValueError('Invalid snapshot')
+    return state
+
+
 class ReplyCollector:
     def __init__(self):
         self.messages = []
@@ -68,7 +94,7 @@ def make_reply(update, state, chat_id):
         return {'ok': True}
     collector = ReplyCollector()
     bot = Bot(collector, chat_id, ':memory:')
-    bot.username = 'msutf_p223_schedule_bot'
+    bot.username = BOT_USERNAME
     try:
         for key, value in state.get('kv', {}).items():
             bot.put(key, value)
@@ -82,11 +108,20 @@ def make_reply(update, state, chat_id):
                                 'https://msu2006.edupage.org/timetable/')
         checked = state.get('kv', {}).get('last_success')
         stale = state_is_stale(state)
-        if stale:
-            response['text'] += '\n\n<i>' + STALE_WARNING + '</i>'
-        elif state.get('kv', {}).get('pending_confirmation'):
-            response['text'] += ('\n\n<i>EduPage что-то поменял. Перепроверяю, потому что одного '
-                                 'кривого ответа для вашего коллективного пиздеца достаточно.</i>')
+        ai_request = is_ai_request(update, chat_id, BOT_USERNAME)
+        if ai_request:
+            message_id = (update.get('message') or {}).get('message_id')
+            if message_id:
+                response['reply_parameters'] = {
+                    'message_id': message_id,
+                    'allow_sending_without_reply': True,
+                }
+        else:
+            if stale:
+                response['text'] += '\n\n<i>' + STALE_WARNING + '</i>'
+            elif state.get('kv', {}).get('pending_confirmation'):
+                response['text'] += ('\n\n<i>EduPage что-то поменял. Перепроверяю, потому что одного '
+                                     'кривого ответа для вашего коллективного пиздеца достаточно.</i>')
         command=update.get('message',{}).get('text','').strip().split()[0].split('@')[0]
         if command in ('/week','/nextweek'):
             today=dt.datetime.now(TZ).date()
@@ -120,7 +155,11 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self):
-        self.respond(200, {'service': 'p223-schedule-bot', 'mode': 'webhook'})
+        self.respond(200, {
+            'service': 'p223-schedule-bot',
+            'mode': 'webhook',
+            'ai': 'ready' if provider_ready() else 'unconfigured',
+        })
 
     def do_POST(self):
         secret = os.getenv('WEBHOOK_SECRET', '')
@@ -135,30 +174,38 @@ class handler(BaseHTTPRequestHandler):
             chat_id = int(os.environ['TELEGRAM_CHAT_ID'])
             if not accepts_update(update, chat_id):
                 return self.respond(200, {'ok': True})
-            command = update['message']['text'].strip().split()[0].split('@')[0]
+            text = update['message']['text'].strip()
+            command = text.split()[0].split('@')[0]
+            ai_request = is_ai_request(update, chat_id, BOT_USERNAME)
             if command in ('/start', '/help'):
                 reply = make_reply(update, {'kv': {}}, chat_id)
                 reply['text'] = reply['text'].replace('\n\n<i>' + STALE_WARNING + '</i>', '')
                 return self.respond(200, reply)
-            url = os.environ['STATE_URL']
-            if not url.startswith('https://raw.githubusercontent.com/'):
-                raise ValueError('STATE_URL must point to the public schedule snapshot')
-            separator = '&' if '?' in url else '?'
-            request = urllib.request.Request(url + separator + 'minute=' + str(int(time.time() // 60)),
-                                             headers={'Cache-Control': 'no-cache',
-                                                      'User-Agent': 'P223ScheduleBot/1.0'})
-            with urllib.request.urlopen(request, timeout=12) as response:
-                data = response.read(1048577)
-            if len(data) > 1048576:
-                raise ValueError('Snapshot too large')
-            state = json.loads(data)
-            if state.get('schema') != 1 or not isinstance(state.get('kv'), dict):
-                raise ValueError('Invalid snapshot')
-            if command in ('/today', '/tomorrow', '/next', '/week', '/nextweek') and state_is_stale(state):
+            # Private AI access is allowlisted. Reject it before any source or
+            # provider call so a random DM cannot spend the group's budget.
+            if ai_request and not private_ai_allowed(update):
+                return self.respond(200, make_reply(update, {'kv': {}}, chat_id))
+            # A missing /ask body needs no schedule fetch and no paid request.
+            if ai_request and not extract_question(update, BOT_USERNAME)[0]:
+                return self.respond(200, make_reply(update, {'kv': {}}, chat_id))
+            source_available = True
+            try:
+                state = fetch_state(os.environ['STATE_URL'])
+            except Exception:
+                if not ai_request:
+                    raise
+                # General questions must not die merely because the timetable
+                # snapshot is unavailable. Schedule questions get an explicit
+                # unknown/stale context and therefore cannot invent lessons.
+                source_available = False
+                state = {'schema': 1, 'kv': {'source_error': True}}
+            if (command in ('/today', '/tomorrow', '/next', '/when', '/free', '/rooms', '/week',
+                            '/nextweek', '/roast') or ai_request) and state_is_stale(state) and source_available:
                 try:
                     # Keep Telegram's webhook comfortably below its timeout. If the
                     # live read fails, make_reply transparently uses saved data.
-                    state = with_live_snapshots(state, EduPage(timeout=8, attempts=1).fetch())
+                    timeout = 4 if ai_request else 8
+                    state = with_live_snapshots(state, EduPage(timeout=timeout, attempts=1).fetch())
                 except Exception:
                     pass
             self.respond(200, make_reply(update, state, chat_id))

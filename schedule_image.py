@@ -7,7 +7,7 @@ import re
 from PIL import Image, ImageDraw, ImageFont
 
 
-DESIGN_VERSION = 4
+DESIGN_VERSION = 5
 WIDTH = 1080
 MARGIN = 54
 
@@ -253,7 +253,7 @@ def render_image(snapshot):
     footer_y = y + 4
     draw.text((MARGIN, footer_y), 'Источник: msu2006.edupage.org  ·  только П2—23',
               font=regular[22], fill=COLORS['muted'])
-    draw.text((MARGIN, footer_y + 38), '/today  сегодня   /tomorrow  завтра   /next  ближайшая пара',
+    draw.text((MARGIN, footer_y + 38), '/today  день   /next  дальше   /ask  спросить AI   /rooms  аудитории',
               font=bold[22], fill=COLORS['ink'])
     draw.text((MARGIN, footer_y + 78), 'Сохрани. Утренний ты — бесполезный мудак без памяти.',
               font=regular[22], fill=COLORS['muted'])
