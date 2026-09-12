@@ -49,10 +49,7 @@
       "message_id": 34358,
       "status": "sent"
     },
-    "source_error": {
-      "at": "2026-09-12T06:35:36.240617+05:00",
-      "type": "SourceError"
-    },
+    "source_error": null,
     "week:2026-09-07": {
       "class_name": "Психология 4 курс П2-23",
       "lessons": [
