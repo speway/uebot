@@ -161,6 +161,21 @@ class AIResponderTests(unittest.TestCase):
         self.assertEqual(seen['authorization'], 'Bearer runtime-oidc-token')
         self.assertEqual(answer, 'OIDC работает')
 
+    def test_explicit_openai_key_overrides_implicit_vercel_oidc(self):
+        seen = {}
+
+        def opener(request, timeout):
+            seen['url'] = request.full_url
+            seen['authorization'] = request.get_header('Authorization')
+            return FakeResponse({'output_text': 'Прямой OpenAI работает'})
+
+        with patch.dict(os.environ, {'OPENAI_API_KEY': 'direct-key'}, clear=True):
+            answer = generate_answer('Тест', self.state, 42, now=self.now, opener=opener,
+                                     runtime_oidc_token='implicit-oidc')
+        self.assertEqual(seen['url'], DIRECT_URL)
+        self.assertEqual(seen['authorization'], 'Bearer direct-key')
+        self.assertEqual(answer, 'Прямой OpenAI работает')
+
     def test_missing_question_and_missing_provider_fail_without_network(self):
         with patch.dict(os.environ, {}, clear=True):
             missing = reply_to_update(update('/ask', update_id=100), self.state, CHAT_ID,

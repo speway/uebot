@@ -122,8 +122,7 @@ def private_ai_allowed(update):
 
 
 def _provider(runtime_oidc_token=None):
-    gateway_key = (runtime_oidc_token or os.getenv('AI_GATEWAY_API_KEY') or
-                   os.getenv('VERCEL_OIDC_TOKEN') or '').strip()
+    gateway_key = os.getenv('AI_GATEWAY_API_KEY', '').strip()
     if gateway_key:
         model = os.getenv('AI_MODEL', DEFAULT_GATEWAY_MODEL).strip() or DEFAULT_GATEWAY_MODEL
         if '/' not in model:
@@ -136,6 +135,12 @@ def _provider(runtime_oidc_token=None):
         if model.startswith('openai/'):
             model = model.split('/', 1)[1]
         return DIRECT_URL, direct_key, model, False
+    oidc_token = (runtime_oidc_token or os.getenv('VERCEL_OIDC_TOKEN') or '').strip()
+    if oidc_token:
+        model = os.getenv('AI_MODEL', DEFAULT_GATEWAY_MODEL).strip() or DEFAULT_GATEWAY_MODEL
+        if '/' not in model:
+            model = 'openai/' + model
+        return GATEWAY_URL, oidc_token, model, True
     return None
 
 
