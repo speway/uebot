@@ -449,9 +449,15 @@ def parse_week(raw, meta):
             if first.get('daydata') or last.get('daydata'):
                 raise SourceError('Индивидуальные звонки требуют проверки')
             subject = tables['subjects'][str(lesson['subjectid'])]['name']
-            teachers = sorted(tables['teachers'][str(i)].get('short') or tables['teachers'][str(i)].get('name', '')
-                              for i in lesson.get('teacherids', []))
-            rooms = sorted(tables['classrooms'][str(i)]['name'] for i in card.get('classroomids', []))
+            # EduPage uses an empty string in reference lists when a lesson has
+            # no assigned teacher or room.  It is an explicit "not assigned"
+            # value, not an ID; trying to resolve it used to reject the whole
+            # newly published week.
+            teacher_ids = [str(i) for i in lesson.get('teacherids', []) if str(i).strip()]
+            room_ids = [str(i) for i in card.get('classroomids', []) if str(i).strip()]
+            teachers = sorted(tables['teachers'][i].get('short') or
+                              tables['teachers'][i].get('name', '') for i in teacher_ids)
+            rooms = sorted(tables['classrooms'][i]['name'] for i in room_ids)
             for day, enabled in enumerate(card['days']):
                 if enabled != '1':
                     continue

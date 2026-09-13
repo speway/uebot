@@ -3,9 +3,13 @@ import datetime as dt
 import hmac
 from http.server import BaseHTTPRequestHandler
 import json
+import logging
 import os
 
 from bot import EduPage, SourceError, TZ
+
+
+LOG = logging.getLogger('schedule.source')
 
 
 def authorized(expected, supplied):
@@ -36,5 +40,9 @@ class handler(BaseHTTPRequestHandler):
             snapshots = EduPage(timeout=12, attempts=1).fetch()
             self.respond(200, {'schema': 1, 'fetched_at': dt.datetime.now(TZ).isoformat(),
                                'snapshots': snapshots})
-        except SourceError:
+        except SourceError as exc:
+            # Do not log headers or secrets. The parser/network reason itself
+            # contains only public EduPage diagnostics and is essential for
+            # distinguishing an outage from a changed source schema.
+            LOG.warning('Schedule source unavailable: %s', exc)
             self.respond(502, {'ok': False, 'error': 'source_unavailable'})

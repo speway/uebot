@@ -161,6 +161,23 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual([(x['start'], x['end']) for x in monday], [('09:00', '10:30'), ('10:45', '12:15')])
         self.assertTrue(all(x['rooms'] == ['313'] for x in self.week['lessons']))
 
+    def test_blank_room_reference_means_room_is_not_assigned(self):
+        tables = {table['id']: table['data_rows']
+                  for table in self.raw['dbiAccessorRes']['tables']}
+        class_id = next(str(item['id']) for item in tables['classes']
+                        if item.get('short') == 'П2-23')
+        lesson_ids = {str(item['id']) for item in tables['lessons']
+                      if class_id in map(str, item.get('classids', []))}
+        changed = 0
+        for card in tables['cards']:
+            if str(card.get('lessonid')) in lesson_ids and card.get('classroomids'):
+                card['classroomids'] = ['']
+                changed += 1
+        self.assertGreater(changed, 0)
+        week = parse_week(self.raw, META)
+        self.assertEqual(len(week['lessons']), 12)
+        self.assertTrue(all(item['rooms'] == [] for item in week['lessons']))
+
     def test_week_mask_does_not_copy_current_lessons_into_next_week(self):
         next_week = parse_week(self.raw, {
             'datefrom': '2026-09-14',
