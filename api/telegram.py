@@ -9,8 +9,9 @@ import urllib.request
 
 from ai_responder import (BOT_USERNAME, extract_question, is_ai_request,
                           private_ai_allowed, provider_ready)
-from bot import (Bot, EduPage, REFRESH_BUTTON_TEXT, TZ, digest, refresh_keyboard,
-                 week_caption)
+from bot import (BOT_COMMAND_NAMES, SCHEDULE_JOKE_COMMAND, SCHEDULE_READ_COMMANDS,
+                 Bot, EduPage, TZ, digest, is_schedule_joke_button,
+                 parse_bot_command, week_caption)
 
 
 STALE_AFTER = dt.timedelta(minutes=30)
@@ -28,15 +29,10 @@ def accepts_update(update, chat_id):
     if chat.get('id') != chat_id and chat.get('type') != 'private':
         return False
     text = (message.get('text') or '').strip()
-    if text == REFRESH_BUTTON_TEXT:
+    if is_schedule_joke_button(text):
         return True
-    parts = text.split()
-    if not parts:
-        return False
-    command, _, address = parts[0].partition('@')
-    known_command = (command in ('/start', '/help', '/today', '/tomorrow', '/next', '/when',
-                                 '/free', '/rooms', '/week', '/nextweek', '/refresh', '/roast', '/status')
-                     and (not address or address.lower() == BOT_USERNAME))
+    command, address = parse_bot_command(text)
+    known_command = command in BOT_COMMAND_NAMES and (not address or address == BOT_USERNAME)
     return known_command or is_ai_request(update, chat_id, BOT_USERNAME)
 
 
@@ -134,6 +130,8 @@ def make_reply(update, state, chat_id, runtime_oidc_token=None):
         checked = state.get('kv', {}).get('last_success')
         stale = state_is_stale(state)
         ai_request = is_ai_request(update, chat_id, BOT_USERNAME)
+        text = update.get('message', {}).get('text', '').strip()
+        command, _address = parse_bot_command(text)
         if ai_request:
             message_id = (update.get('message') or {}).get('message_id')
             if message_id:
@@ -141,14 +139,12 @@ def make_reply(update, state, chat_id, runtime_oidc_token=None):
                     'message_id': message_id,
                     'allow_sending_without_reply': True,
                 }
-        else:
+        elif command in SCHEDULE_READ_COMMANDS:
             if stale:
                 response['text'] += '\n\n<i>' + STALE_WARNING + '</i>'
             elif state.get('kv', {}).get('pending_confirmation'):
                 response['text'] += ('\n\n<i>EduPage что-то поменял. Перепроверяю, потому что одного '
                                      'кривого ответа для вашего коллективного пиздеца достаточно.</i>')
-        text = update.get('message', {}).get('text', '').strip()
-        command = '/refresh' if text == REFRESH_BUTTON_TEXT else text.split()[0].split('@')[0]
         if command in ('/week','/nextweek'):
             today=dt.datetime.now(TZ).date()
             monday=today-dt.timedelta(days=today.weekday())+dt.timedelta(days=7 if command=='/nextweek' else 0)
@@ -160,8 +156,16 @@ def make_reply(update, state, chat_id, runtime_oidc_token=None):
                     caption += '\n\n<i>Автопроверка задержалась. Сверься с EduPage, если не хочешь выглядеть долбоёбом у пустой аудитории.</i>'
                 elif state.get('kv',{}).get('pending_confirmation'):
                     caption += '\n\n<i>Замечено изменение; перепроверяю, чтобы вы не побежали не туда всей этой прекрасной толпой.</i>'
-                return {'method':'sendPhoto','chat_id':response['chat_id'],'photo':photo,'caption':caption,
-                        'parse_mode':'HTML', 'reply_markup': response.get('reply_markup', refresh_keyboard())}
+                photo_response = {
+                    'method': 'sendPhoto',
+                    'chat_id': response['chat_id'],
+                    'photo': photo,
+                    'caption': caption,
+                    'parse_mode': 'HTML',
+                }
+                if 'reply_markup' in response:
+                    photo_response['reply_markup'] = response['reply_markup']
+                return photo_response
         return response
     finally:
         bot.db.close()
@@ -203,13 +207,18 @@ class handler(BaseHTTPRequestHandler):
             if not accepts_update(update, chat_id):
                 return self.respond(200, {'ok': True})
             text = update['message']['text'].strip()
-            manual_refresh = text == REFRESH_BUTTON_TEXT
-            command = '/refresh' if manual_refresh else text.split()[0].split('@')[0]
+            command, _address = parse_bot_command(text)
+            joke_button = command == SCHEDULE_JOKE_COMMAND
+            manual_refresh = command == '/refresh'
             ai_request = is_ai_request(update, chat_id, BOT_USERNAME)
             if command in ('/start', '/help'):
                 reply = make_reply(update, {'kv': {}}, chat_id, runtime_oidc_token)
-                reply['text'] = reply['text'].replace('\n\n<i>' + STALE_WARNING + '</i>', '')
                 return self.respond(200, reply)
+            # This is intentionally a local easter egg, not a disguised source
+            # request. It must stay instant and work even when GitHub/EduPage is down.
+            if joke_button:
+                return self.respond(200, make_reply(
+                    update, {'schema': 1, 'kv': {}}, chat_id, runtime_oidc_token))
             # Private AI access is allowlisted. Reject it before any source or
             # provider call so a random DM cannot spend the group's budget.
             if ai_request and not private_ai_allowed(update):
@@ -236,8 +245,7 @@ class handler(BaseHTTPRequestHandler):
                         state, EduPage(timeout=8, attempts=1).fetch(), comparable=state_available)
                 except Exception:
                     state = with_live_failure(state)
-            elif ((command in ('/today', '/tomorrow', '/next', '/when', '/free', '/rooms', '/week',
-                               '/nextweek', '/roast') or ai_request) and state_is_stale(state)
+            elif ((command in SCHEDULE_READ_COMMANDS or ai_request) and state_is_stale(state)
                   and state_available):
                 try:
                     # Keep Telegram's webhook comfortably below its timeout. If the

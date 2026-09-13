@@ -8,10 +8,11 @@ import tempfile
 import unittest
 
 from bot import (Bot, SourceError, DeliveryError, TelegramRejected, EduPage,
-                 REFRESH_BUTTON_TEXT, TZ,
+                 REFRESH_BUTTON_TEXT, SCHEDULE_JOKE_BUTTON_TEXT, TZ,
+                 UNIVERSITY_JOKES,
                  IPv4HTTPSConnection, IPv4HTTPSHandler, digest, ipv4_connection,
                  parse_week, render_day_reply, render_week, situational_roast,
-                 week_caption)
+                 university_joke, week_caption)
 
 META = {'datefrom': '2026-09-07', 'text': '7–12 сентября', 'tt_num': '130'}
 
@@ -280,10 +281,17 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(self.api.messages, [])
 
     def test_private_help_stays_in_private_chat(self):
-        self.bot.handle({'update_id': 2, 'message': {'chat': {'id': 999, 'type': 'private'},
+        self.bot.handle({'update_id': 2, 'message': {'message_id': 22,
+                                                    'chat': {'id': 999, 'type': 'private'},
                                                     'from': {'id': 999}, 'text': '/help'}})
         self.assertEqual(len(self.api.messages), 1)
         self.assertEqual(self.api.messages[0][0], 999)
+        keyboard = self.api.send_options[-1]['reply_markup']
+        self.assertTrue(keyboard['one_time_keyboard'])
+        self.assertTrue(keyboard['selective'])
+        self.assertNotIn('is_persistent', keyboard)
+        self.assertEqual(keyboard['keyboard'][0][0]['text'], SCHEDULE_JOKE_BUTTON_TEXT)
+        self.assertEqual(self.api.send_options[-1]['reply_parameters']['message_id'], 22)
 
     def test_polling_ai_reply_targets_the_original_message(self):
         from unittest.mock import patch
@@ -408,6 +416,14 @@ class ScheduleTests(unittest.TestCase):
         variants = {situational_roast('free', f'day:{index}') for index in range(30)}
         self.assertGreater(len(variants), 1)
 
+    def test_university_jokes_are_varied_unique_and_retry_stable(self):
+        self.assertGreaterEqual(len(UNIVERSITY_JOKES), 20)
+        self.assertLessEqual(len(UNIVERSITY_JOKES), 40)
+        self.assertEqual(len(UNIVERSITY_JOKES), len(set(UNIVERSITY_JOKES)))
+        self.assertEqual(university_joke('same'), university_joke('same'))
+        variants = {university_joke(f'update:{index}') for index in range(100)}
+        self.assertGreaterEqual(len(variants), 20)
+
     def test_status_is_diagnostic_but_human(self):
         self.bot.put('last_success', self.now.isoformat())
         result = self.bot.status_message(self.now + dt.timedelta(minutes=7))
@@ -446,20 +462,30 @@ class ScheduleTests(unittest.TestCase):
         failed = self.bot.refresh_message(self.now)
         self.assertIn('Сохранённое расписание не трогал', failed)
 
-    def test_refresh_button_dispatches_and_keeps_keyboard_visible(self):
-        self.bot.put('live_refresh', {
-            'status': 'failed',
-            'checked_at': self.now.isoformat(),
-        })
+    def test_schedule_button_returns_a_joke_and_removes_keyboard(self):
         self.bot.handle({'update_id': 808, 'message': {
+            'message_id': 807,
             'chat': {'id': -100123, 'type': 'supergroup'},
             'from': {'id': 42},
             'text': REFRESH_BUTTON_TEXT,
         }})
-        self.assertIn('EduPage сейчас не ответил', self.api.messages[-1][1])
+        self.assertTrue(any(joke in self.api.messages[-1][1] for joke in UNIVERSITY_JOKES))
+        self.assertIn('Настоящая проверка — /refresh', self.api.messages[-1][1])
         keyboard = self.api.send_options[-1]['reply_markup']
-        self.assertTrue(keyboard['is_persistent'])
-        self.assertEqual(keyboard['keyboard'][0][0]['text'], REFRESH_BUTTON_TEXT)
+        self.assertTrue(keyboard['remove_keyboard'])
+        self.assertTrue(keyboard['selective'])
+        self.assertNotIn('keyboard', keyboard)
+        self.assertEqual(self.api.send_options[-1]['reply_parameters']['message_id'], 807)
+
+    def test_ordinary_schedule_replies_do_not_restore_the_joke_keyboard(self):
+        self.bot.put('week:' + self.week['week'], self.week)
+        self.bot.handle({'update_id': 809, 'message': {
+            'message_id': 808,
+            'chat': {'id': -100123, 'type': 'supergroup'},
+            'from': {'id': 42},
+            'text': '/today',
+        }})
+        self.assertNotIn('reply_markup', self.api.send_options[-1])
 
     def test_status_summarizes_current_and_unpublished_next_week(self):
         self.bot.put('week:' + self.week['week'], self.week)
@@ -520,9 +546,10 @@ class ScheduleTests(unittest.TestCase):
         names = {item['command'] for item in command_call['commands']}
         self.assertTrue({'ask', 'when', 'free', 'rooms', 'refresh', 'roast'} <= names)
         self.assertEqual(len(self.api.messages), 1)
-        self.assertIn('Ручная проверка', self.api.messages[0][1])
+        self.assertIn('Кнопку выселил', self.api.messages[0][1])
+        self.assertIn('Настоящая проверка — /refresh', self.api.messages[0][1])
         keyboard = self.api.send_options[0]['reply_markup']
-        self.assertEqual(keyboard['keyboard'][0][0]['text'], REFRESH_BUTTON_TEXT)
+        self.assertTrue(keyboard['remove_keyboard'])
 
 
 if __name__ == '__main__':

@@ -10,7 +10,8 @@ from ai_responder import reset_runtime_state
 from api.source import authorized
 from api.telegram import (accepts_update, fetch_state, make_reply, state_is_stale,
                           handler, with_live_failure, with_live_snapshots)
-from bot import REFRESH_BUTTON_TEXT, SourceError, TZ, parse_week
+from bot import (BOT_COMMANDS, REFRESH_BUTTON_TEXT, SourceError, TZ,
+                 UNIVERSITY_JOKES, parse_week)
 from github_runner import (GitStateBot, KNOWN_FALSE_WEEK_DIGEST, checked_recently,
                            check_with_confirmation, git, refresh_stored_publications, run_checks,
                            repair_stored_week_mask_bug, validate_relay_payload)
@@ -79,7 +80,7 @@ class HostingTests(unittest.TestCase):
         self.assertEqual(result['photo'], 'confirmed-photo')
         self.assertIn('перепроверяю', result['caption'])
         self.assertEqual(result['parse_mode'], 'HTML')
-        self.assertTrue(result['reply_markup']['is_persistent'])
+        self.assertNotIn('reply_markup', result)
 
     def test_live_overlay_never_reuses_a_possibly_stale_photo(self):
         now = dt.datetime.now(TZ)
@@ -254,49 +255,53 @@ class HostingTests(unittest.TestCase):
                                                        'text': '/help'}}, {'kv': {}}, -100123)
         self.assertEqual(result, {'ok': True})
 
-    def test_webhook_personal_text_and_staleness_warning(self):
-        result = make_reply({'update_id': 10, 'message': {'chat': {'id': -100123, 'type': 'supergroup'},
+    def test_help_is_not_polluted_by_schedule_staleness(self):
+        result = make_reply({'update_id': 10, 'message': {'message_id': 9,
+                                                        'chat': {'id': -100123, 'type': 'supergroup'},
                                                         'from': {'id': 42}, 'text': '/help'}}, {'kv': {}}, -100123)
         self.assertIn('читаю EduPage за П2‑23', result['text'])
-        self.assertIn('Автопроверка задержалась', result['text'])
+        self.assertNotIn('Автопроверка задержалась', result['text'])
+        self.assertTrue(result['reply_markup']['one_time_keyboard'])
+        self.assertTrue(result['reply_markup']['selective'])
+        self.assertNotIn('is_persistent', result['reply_markup'])
+        self.assertEqual(result['reply_parameters']['message_id'], 9)
         self.assertEqual(result['chat_id'], -100123)
+
+        stale = make_reply({'update_id': 11, 'message': {
+            'chat': {'id': -100123, 'type': 'supergroup'},
+            'from': {'id': 42}, 'text': '/today',
+        }}, {'kv': {}}, -100123)
+        self.assertIn('Автопроверка задержалась', stale['text'])
 
     def test_next_command_is_accepted(self):
         update = {'message': {'chat': {'id': -100123, 'type': 'supergroup'},
                               'text': '/next@msutf_p223_schedule_bot'}}
         self.assertTrue(accepts_update(update, -100123))
 
-    def test_new_utility_commands_are_accepted(self):
-        for command in ('ask', 'when', 'free', 'rooms', 'refresh', 'roast'):
+    def test_telegram_command_registry_is_accepted_without_a_second_list(self):
+        for command in [item['command'] for item in BOT_COMMANDS] + ['start']:
             update = {'message': {'chat': {'id': -100123, 'type': 'supergroup'},
                                   'from': {'id': 42},
                                   'text': f'/{command}@msutf_p223_schedule_bot вопрос'}}
             self.assertTrue(accepts_update(update, -100123))
 
-    def test_persistent_refresh_button_is_accepted_and_returns_a_live_result(self):
+    def test_old_refresh_button_text_is_accepted_as_a_joke_and_then_removed(self):
         update = {'update_id': 404, 'message': {
+            'message_id': 403,
             'chat': {'id': -100123, 'type': 'supergroup'},
             'from': {'id': 42},
             'text': REFRESH_BUTTON_TEXT,
         }}
         self.assertTrue(accepts_update(update, -100123))
-        now = dt.datetime.now(TZ)
-        monday = now.date() - dt.timedelta(days=now.weekday())
-        state = {'schema': 1, 'kv': {
-            'last_success': now.isoformat(),
-            'week:' + monday.isoformat(): {'week': monday.isoformat(), 'lessons': []},
-            'live_refresh': {
-                'status': 'same',
-                'changed_weeks': [],
-                'checked_at': now.isoformat(),
-            },
-        }}
-        result = make_reply(update, state, -100123)
+        result = make_reply(update, {'schema': 1, 'kv': {}}, -100123)
         self.assertEqual(result['method'], 'sendMessage')
-        self.assertIn('изменений нет', result['text'])
-        self.assertEqual(result['reply_markup']['keyboard'][0][0]['text'], REFRESH_BUTTON_TEXT)
+        self.assertTrue(any(joke in result['text'] for joke in UNIVERSITY_JOKES))
+        self.assertNotIn('Автопроверка задержалась', result['text'])
+        self.assertTrue(result['reply_markup']['remove_keyboard'])
+        self.assertTrue(result['reply_markup']['selective'])
+        self.assertEqual(result['reply_parameters']['message_id'], 403)
 
-    def test_webhook_button_forces_live_read_even_with_fresh_saved_state(self):
+    def test_refresh_command_forces_live_read_even_with_fresh_saved_state(self):
         now = dt.datetime.now(TZ)
         monday = now.date() - dt.timedelta(days=now.weekday())
         snapshot = {'week': monday.isoformat(), 'lessons': []}
@@ -307,7 +312,7 @@ class HostingTests(unittest.TestCase):
         update = {'update_id': 405, 'message': {
             'chat': {'id': -100123, 'type': 'supergroup'},
             'from': {'id': 42},
-            'text': REFRESH_BUTTON_TEXT,
+            'text': '/refresh',
         }}
         payload = json.dumps(update).encode()
 
@@ -347,6 +352,44 @@ class HostingTests(unittest.TestCase):
         self.assertEqual(LiveSource.calls, 1)
         self.assertEqual(request.response[0], 200)
         self.assertIn('изменений нет', request.response[1]['text'])
+
+    def test_joke_button_bypasses_snapshot_and_edupage_network_calls(self):
+        update = {'update_id': 406, 'message': {
+            'message_id': 405,
+            'chat': {'id': -100123, 'type': 'supergroup'},
+            'from': {'id': 42},
+            'text': REFRESH_BUTTON_TEXT,
+        }}
+        payload = json.dumps(update).encode()
+
+        class Request:
+            headers = {
+                'X-Telegram-Bot-Api-Secret-Token': 'secret',
+                'Content-Length': str(len(payload)),
+            }
+            rfile = BytesIO(payload)
+
+            def __init__(self):
+                self.response = None
+
+            def respond(self, code, data):
+                self.response = (code, data)
+
+        request = Request()
+        environment = {
+            'WEBHOOK_SECRET': 'secret',
+            'TELEGRAM_CHAT_ID': '-100123',
+            'STATE_URL': 'https://raw.githubusercontent.com/speway/uebot/state/schedule.json',
+        }
+        with patch.dict('os.environ', environment, clear=True), \
+                patch('api.telegram.fetch_state', side_effect=AssertionError('state fetched')) as state_fetch, \
+                patch('api.telegram.EduPage', side_effect=AssertionError('EduPage called')) as source:
+            handler.do_POST(request)
+        state_fetch.assert_not_called()
+        source.assert_not_called()
+        self.assertEqual(request.response[0], 200)
+        self.assertTrue(any(joke in request.response[1]['text'] for joke in UNIVERSITY_JOKES))
+        self.assertTrue(request.response[1]['reply_markup']['remove_keyboard'])
 
     def test_group_ai_mentions_and_replies_are_accepted_but_chatter_is_not(self):
         base = {'chat': {'id': -100123, 'type': 'supergroup'},

@@ -22,6 +22,8 @@ import urllib.error
 import urllib.request
 from zoneinfo import ZoneInfo
 
+from bot_copy import UNIVERSITY_JOKES
+
 SOURCE = 'https://msu2006.edupage.org'
 GROUP = 'П2-23'
 TZ = ZoneInfo('Asia/Tashkent')
@@ -110,8 +112,12 @@ ROASTS = {
         'Расписание сохранено, а доставка обосралась. Администратору оставлен диагноз без латыни.',
     ),
 }
-REFRESH_BUTTON_TEXT = '🔄 Проверить расписание'
-BOT_CONFIG_VERSION = 6
+SCHEDULE_JOKE_BUTTON_TEXT = '🔄 Проверить расписание'
+# Keep the old public name for deployments or integrations importing it. The
+# button is deliberately no longer a refresh action; /refresh is the only one.
+REFRESH_BUTTON_TEXT = SCHEDULE_JOKE_BUTTON_TEXT
+SCHEDULE_JOKE_COMMAND = '/schedule-joke'
+BOT_CONFIG_VERSION = 7
 BOT_COMMANDS = [
     {'command': 'today', 'description': 'Какой сегодня учебный пиздец'},
     {'command': 'tomorrow', 'description': 'Чем испортят завтрашний день'},
@@ -127,17 +133,59 @@ BOT_COMMANDS = [
     {'command': 'status', 'description': 'Кто опять обосрался'},
     {'command': 'help', 'description': 'Инструкция для самых потерянных'},
 ]
+BOT_COMMAND_NAMES = frozenset('/' + item['command'] for item in BOT_COMMANDS) | {'/start'}
+SCHEDULE_READ_COMMANDS = frozenset({
+    '/today', '/tomorrow', '/next', '/when', '/free', '/rooms', '/week',
+    '/nextweek', '/refresh', '/roast',
+})
 LOG = logging.getLogger('schedule')
 
 
-def refresh_keyboard():
-    """Return the persistent keyboard shared by webhook and polling replies."""
+def is_schedule_joke_button(text):
+    return clean_spaces(text) == SCHEDULE_JOKE_BUTTON_TEXT
+
+
+def parse_bot_command(text):
+    """Return command and optional @address from command text or our gag button."""
+    text = str(text or '').strip()
+    if is_schedule_joke_button(text):
+        return SCHEDULE_JOKE_COMMAND, ''
+    if not text:
+        return '', ''
+    command, _, address = text.split()[0].partition('@')
+    return command, address.lower()
+
+
+def schedule_joke_keyboard():
+    """Expose the gag once from /help instead of occupying the input forever."""
     return {
-        'keyboard': [[{'text': REFRESH_BUTTON_TEXT}]],
+        'keyboard': [[{'text': SCHEDULE_JOKE_BUTTON_TEXT}]],
         'resize_keyboard': True,
-        'is_persistent': True,
-        'input_field_placeholder': 'Расписание, команда или вопрос боту',
+        'one_time_keyboard': True,
+        'selective': True,
+        'input_field_placeholder': 'Нажми, если доверчивый',
     }
+
+
+def remove_reply_keyboard(selective=False):
+    result = {'remove_keyboard': True}
+    if selective:
+        result['selective'] = True
+    return result
+
+
+def reply_keyboard_for(command):
+    """Keep the gag discoverable in help and absent everywhere else."""
+    if command in ('/start', '/help'):
+        return schedule_joke_keyboard()
+    if command == SCHEDULE_JOKE_COMMAND:
+        return remove_reply_keyboard(selective=True)
+    return None
+
+
+def refresh_keyboard():
+    """Backward-compatible name for the now one-time joke keyboard."""
+    return schedule_joke_keyboard()
 
 
 class SourceError(Exception):
@@ -181,6 +229,12 @@ def situational_roast(kind, seed=''):
     options = ROASTS[kind]
     fingerprint = hashlib.sha256(f'{kind}:{seed}'.encode()).digest()
     return options[int.from_bytes(fingerprint[:4], 'big') % len(options)]
+
+
+def university_joke(seed=''):
+    """Pick a stable gag so webhook retries return identical copy."""
+    fingerprint = hashlib.sha256(f'university-joke:{seed}'.encode()).digest()
+    return UNIVERSITY_JOKES[int.from_bytes(fingerprint[:4], 'big') % len(UNIVERSITY_JOKES)]
 
 
 def minutes_text(minutes):
@@ -799,13 +853,13 @@ class Bot:
         self.tg.call('setMyShortDescription', short_description=(
             'Пары и AI для П2‑23. Ищу всё, кроме оправданий вашему опозданию.'))
         self.send_once(
-            'refresh-button:v1',
-            '<b>П2‑23 · Ручная проверка</b>\n\n'
-            'Добавил внизу кнопку <b>🔄 Проверить расписание</b>. '
-            'Нажмёте — сразу перечитаю EduPage и скажу, что там изменилось.\n\n'
-            '<i>Да, кнопку пришлось сделать: доверить вам набрать /refresh '
-            'оказалось чересчур смело.</i>',
-            reply_markup=refresh_keyboard(),
+            'schedule-joke-button:v1',
+            '<b>П2‑23 · Кнопку выселил</b>\n\n'
+            'Постоянную <b>🔄 Проверить расписание</b> убрал: '
+            'слишком часто вы тыкали её талантливыми жопами.\n\n'
+            'Теперь она появляется только после /help и выдаёт '
+            'университетский диагноз. <b>Настоящая проверка — /refresh.</b>',
+            reply_markup=remove_reply_keyboard(),
         )
         self.put('bot_config_version', BOT_CONFIG_VERSION)
 
@@ -1175,6 +1229,13 @@ class Bot:
                 f'Следующая неделя: {week_status(monday + dt.timedelta(days=7))}\n\n'
                 f'<i>{html.escape(roast)}</i>')
 
+    def university_joke_message(self, seed=''):
+        joke = university_joke(seed)
+        return (f'<b>П2‑23 · Проверка завершена</b>\n\n'
+                f'{html.escape(joke)}\n\n'
+                '<i>Это была кнопка-лохотрон. Настоящая проверка — /refresh. '
+                'Клавиатуру убрал, пока вы не затыкали её до дыр.</i>')
+
     def status_message(self, now=None, runtime_oidc_token=None):
         from ai_responder import provider_ready
 
@@ -1242,8 +1303,9 @@ class Bot:
         text = message.get('text', '').strip()
         username = self.username or BOT_USERNAME
         ai_request = is_ai_request(update, self.chat_id, username)
-        manual_refresh = text == REFRESH_BUTTON_TEXT
-        if not text.startswith('/') and not ai_request and not manual_refresh:
+        command, address = parse_bot_command(text)
+        joke_button = command == SCHEDULE_JOKE_COMMAND
+        if not text.startswith('/') and not ai_request and not joke_button:
             return
         if ai_request:
             reply_key = 'reply:' + str(update.get('update_id', 0)) + ':0'
@@ -1269,22 +1331,27 @@ class Bot:
                         'message_id': message['message_id'],
                         'allow_sending_without_reply': True,
                     }
-                options = {'reply_parameters': reply_parameters} if reply_parameters else {}
+                options = {}
+                if reply_parameters:
+                    options['reply_parameters'] = reply_parameters
                 self.send_once(reply_key, response, destination, **options)
             return
-        command = '/refresh' if manual_refresh else text.split()[0]
-        if '@' in command:
-            command, address = command.split('@', 1)
-            if address.lower() != self.username.lower():
-                return
-        sender = message.get('from', {}).get('id', 0)
-        last = self.get('rate:' + str(sender), 0)
-        if time.time() - last < 5:
+        if address and address != username.lower():
             return
-        self.put('rate:' + str(sender), time.time())
+        sender = message.get('from', {}).get('id', 0)
+        # The one-shot joke must always close its keyboard, even when somebody
+        # opens /help and presses it within the ordinary five-second cooldown.
+        if not joke_button:
+            last = self.get('rate:' + str(sender), 0)
+            if time.time() - last < 5:
+                return
+            self.put('rate:' + str(sender), time.time())
         now = dt.datetime.now(TZ)
         today = now.date()
-        if command in ('/today', '/tomorrow'):
+        if joke_button:
+            messages = [self.university_joke_message(
+                f'{update.get("update_id", 0)}:{sender}')]
+        elif command in ('/today', '/tomorrow'):
             messages = self.day_messages(today + dt.timedelta(days=command == '/tomorrow'), now)
         elif command == '/next':
             messages = [self.next_message(now)]
@@ -1318,6 +1385,8 @@ class Bot:
                         '/nextweek — будущее, если деканат его высрал\n'
                         '/refresh — перечитать EduPage прямо сейчас\n'
                         '/status — кто опять обосрался\n\n'
+                        'Внизу один раз появится кнопка «Проверить расписание» — '
+                        'это академический тест на доверчивость, а не сетевой запрос.\n\n'
                         'В группе AI отвечает только на /ask, прямое @упоминание или ответ на моё сообщение — '
                         'в чужой трёп без приглашения не лезу.\n\n'
                         'Изменение публикую только после повторной проверки, чтобы одна галлюцинация '
@@ -1326,8 +1395,17 @@ class Bot:
         else:
             return
         for i, response in enumerate(messages):
-            self.send_once('reply:' + str(update['update_id']) + ':' + str(i), response, destination,
-                           reply_markup=refresh_keyboard())
+            options = {}
+            reply_markup = reply_keyboard_for(command)
+            if reply_markup:
+                options['reply_markup'] = reply_markup
+            if reply_markup and message.get('message_id'):
+                options['reply_parameters'] = {
+                    'message_id': message['message_id'],
+                    'allow_sending_without_reply': True,
+                }
+            self.send_once('reply:' + str(update['update_id']) + ':' + str(i),
+                           response, destination, **options)
 
     def run(self, interval=90):
         self.username = self.tg.call('getMe')['username']
