@@ -67,7 +67,8 @@
       "status": "sent"
     },
     "sent:weekly:publication:2026-09-21:0:0": {
-      "status": "pending"
+      "message_id": 34782,
+      "status": "sent"
     },
     "source_error": null,
     "week:2026-09-07": {
