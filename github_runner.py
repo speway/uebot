@@ -65,6 +65,8 @@ def fetch_snapshots():
         direct_error = exc
     relay_error = None
     if url and secret:
+        logging.warning('Direct EduPage read failed; trying the authenticated relay: %s',
+                        direct_error)
         request = urllib.request.Request(url, headers={'X-Schedule-Source-Secret': secret,
                                                        'User-Agent': 'P223ScheduleBot/1.0'})
         try:
@@ -124,6 +126,8 @@ def run_checks(bot, fetcher=fetch_snapshots, watch_seconds=0,
         try:
             check_with_confirmation(bot, fetcher, sleeper)
             consecutive_source_failures = 0
+            logging.info('Schedule check succeeded; next poll is due within %s seconds.',
+                         interval_seconds)
         except DeliveryError:
             # Telegram failures need a red workflow and operator-visible state;
             # blindly continuing could conceal an unresolved send reservation.
