@@ -110,7 +110,8 @@ ROASTS = {
         'Расписание сохранено, а доставка обосралась. Администратору оставлен диагноз без латыни.',
     ),
 }
-BOT_CONFIG_VERSION = 5
+REFRESH_BUTTON_TEXT = '🔄 Проверить расписание'
+BOT_CONFIG_VERSION = 6
 BOT_COMMANDS = [
     {'command': 'today', 'description': 'Какой сегодня учебный пиздец'},
     {'command': 'tomorrow', 'description': 'Чем испортят завтрашний день'},
@@ -121,11 +122,22 @@ BOT_COMMANDS = [
     {'command': 'rooms', 'description': 'Аудитории на сегодня без квеста'},
     {'command': 'week', 'description': 'Вся неделя одним страданием'},
     {'command': 'nextweek', 'description': 'Будущее, если его опубликовали'},
+    {'command': 'refresh', 'description': 'Перечитать EduPage прямо сейчас'},
     {'command': 'roast', 'description': 'Вердикт по сегодняшнему пиздецу'},
     {'command': 'status', 'description': 'Кто опять обосрался'},
     {'command': 'help', 'description': 'Инструкция для самых потерянных'},
 ]
 LOG = logging.getLogger('schedule')
+
+
+def refresh_keyboard():
+    """Return the persistent keyboard shared by webhook and polling replies."""
+    return {
+        'keyboard': [[{'text': REFRESH_BUTTON_TEXT}]],
+        'resize_keyboard': True,
+        'is_persistent': True,
+        'input_field_placeholder': 'Расписание, команда или вопрос боту',
+    }
 
 
 class SourceError(Exception):
@@ -786,6 +798,15 @@ class Bot:
             'обратный отсчёт, изменения и AI-ответы. Подкалывает, потому что кто-то же должен вас воспитывать.'))
         self.tg.call('setMyShortDescription', short_description=(
             'Пары и AI для П2‑23. Ищу всё, кроме оправданий вашему опозданию.'))
+        self.send_once(
+            'refresh-button:v1',
+            '<b>П2‑23 · Ручная проверка</b>\n\n'
+            'Добавил внизу кнопку <b>🔄 Проверить расписание</b>. '
+            'Нажмёте — сразу перечитаю EduPage и скажу, что там изменилось.\n\n'
+            '<i>Да, кнопку пришлось сделать: доверить вам набрать /refresh '
+            'оказалось чересчур смело.</i>',
+            reply_markup=refresh_keyboard(),
+        )
         self.put('bot_config_version', BOT_CONFIG_VERSION)
 
     def publish_week(self, snapshot):
@@ -1073,6 +1094,87 @@ class Bot:
         return (f'<b>П2‑23 · {heading}</b>\n{html.escape(timing)}\n\n{lesson_text(item)}{pair_line}\n\n'
                 f'<i>{html.escape(tease)}</i>')
 
+    def refresh_message(self, now=None):
+        """Describe a forced live read without bypassing change confirmation."""
+        now = now or dt.datetime.now(TZ)
+        marker = self.get('live_refresh')
+        live = {}
+        if not isinstance(marker, dict):
+            try:
+                snapshots = EduPage(timeout=12, attempts=1).fetch(now.date())
+            except SourceError:
+                marker = {'status': 'failed', 'checked_at': now.isoformat()}
+            else:
+                changed_weeks = []
+                for snapshot in snapshots:
+                    live[snapshot['week']] = snapshot
+                    old = self.get('week:' + snapshot['week'])
+                    if not old or digest(old.get('lessons', [])) != digest(snapshot.get('lessons', [])):
+                        changed_weeks.append(snapshot['week'])
+                marker = {
+                    'status': 'changed' if changed_weeks else 'same',
+                    'changed_weeks': changed_weeks,
+                    'checked_at': now.isoformat(),
+                }
+
+        monday = now.date() - dt.timedelta(days=now.date().weekday())
+
+        def week_status(start):
+            snapshot = live.get(start.isoformat()) or self.get('week:' + start.isoformat())
+            if not snapshot:
+                return 'нет подтверждённых данных'
+            count = len(snapshot.get('lessons', []))
+            if not count:
+                return 'ещё не опубликована'
+            return f"{count} {plural_ru(count, 'пара', 'пары', 'пар')}"
+
+        status = marker.get('status')
+        if status == 'same':
+            title = 'Проверил прямо сейчас'
+            result = 'EduPage перечитан: изменений нет.'
+            roast = 'Деканат пока не придумал новый способ вас запутать. Паникуйте по старому плану.'
+        elif status == 'changed':
+            labels = []
+            for value in marker.get('changed_weeks', []):
+                try:
+                    start = dt.date.fromisoformat(value)
+                except (TypeError, ValueError):
+                    continue
+                if start == monday:
+                    labels.append('эта неделя')
+                elif start == monday + dt.timedelta(days=7):
+                    labels.append('следующая неделя')
+                else:
+                    labels.append(start.strftime('%d.%m'))
+            changed = ', '.join(labels) or 'расписание'
+            title = 'Нашёл изменение'
+            result = f'EduPage уже показывает другую версию: <b>{html.escape(changed)}</b>.'
+            roast = ('Watcher перечитает изменение и обновит основной пост обычно в течение двух минут. '
+                     'Один кривой ответ сайта не погонит всё стадо не туда.')
+        elif status == 'uncompared':
+            title = 'Живую версию прочитал'
+            result = ('EduPage ответил, но сохранённая база сейчас недоступна, '
+                      'поэтому честно сравнить версии не могу.')
+            roast = 'Ничего не выдумал. Неожиданно зрелое поведение для этой группы, запишите дату.'
+        else:
+            title = 'EduPage сейчас не ответил'
+            result = 'Подтверждённого живого ответа нет. Сохранённое расписание не трогал.'
+            roast = 'Хотя бы один из нас не паникует и не выдаёт догадки за расписание.'
+
+        checked_at = marker.get('checked_at')
+        checked_line = ''
+        try:
+            checked = dt.datetime.fromisoformat(checked_at).astimezone(TZ)
+            time_label = ('Попытка' if status not in ('same', 'changed', 'uncompared')
+                          else 'Проверено')
+            checked_line = f'\n{time_label}: {checked:%d.%m в %H:%M}'
+        except (TypeError, ValueError):
+            pass
+        return (f'<b>П2‑23 · {title}</b>\n\n{result}{checked_line}\n'
+                f'Эта неделя: {week_status(monday)}\n'
+                f'Следующая неделя: {week_status(monday + dt.timedelta(days=7))}\n\n'
+                f'<i>{html.escape(roast)}</i>')
+
     def status_message(self, now=None, runtime_oidc_token=None):
         from ai_responder import provider_ready
 
@@ -1113,7 +1215,7 @@ class Bot:
             'Следующая неделя: ' + week_status(monday + dt.timedelta(days=7)),
             'AI-канал: ' + ('подключён' if provider_ready(runtime_oidc_token)
                             else 'ждёт настройки'),
-            'Автопроверка: примерно каждые 5 минут',
+            'Автопроверка: примерно каждые 90 секунд',
         ]
         if source_problem:
             roast = situational_roast('source_error', 'status:' + now.date().isoformat())
@@ -1140,7 +1242,8 @@ class Bot:
         text = message.get('text', '').strip()
         username = self.username or BOT_USERNAME
         ai_request = is_ai_request(update, self.chat_id, username)
-        if not text.startswith('/') and not ai_request:
+        manual_refresh = text == REFRESH_BUTTON_TEXT
+        if not text.startswith('/') and not ai_request and not manual_refresh:
             return
         if ai_request:
             reply_key = 'reply:' + str(update.get('update_id', 0)) + ':0'
@@ -1169,7 +1272,7 @@ class Bot:
                 options = {'reply_parameters': reply_parameters} if reply_parameters else {}
                 self.send_once(reply_key, response, destination, **options)
             return
-        command = text.split()[0]
+        command = '/refresh' if manual_refresh else text.split()[0]
         if '@' in command:
             command, address = command.split('@', 1)
             if address.lower() != self.username.lower():
@@ -1197,6 +1300,8 @@ class Bot:
             monday = today - dt.timedelta(days=today.weekday()) + dt.timedelta(days=7 if command == '/nextweek' else 0)
             snapshot = self.get('week:' + monday.isoformat())
             messages = render_week(snapshot) if snapshot else [NO_SCHEDULE_ROAST]
+        elif command == '/refresh':
+            messages = [self.refresh_message(now)]
         elif command == '/status':
             messages = [self.status_message(now, runtime_oidc_token)]
         elif command in ('/start', '/help'):
@@ -1211,6 +1316,7 @@ class Bot:
                         '/roast — диагноз сегодняшней учебной нагрузке\n'
                         '/week — вся неделя одним страданием\n'
                         '/nextweek — будущее, если деканат его высрал\n'
+                        '/refresh — перечитать EduPage прямо сейчас\n'
                         '/status — кто опять обосрался\n\n'
                         'В группе AI отвечает только на /ask, прямое @упоминание или ответ на моё сообщение — '
                         'в чужой трёп без приглашения не лезу.\n\n'
@@ -1220,7 +1326,8 @@ class Bot:
         else:
             return
         for i, response in enumerate(messages):
-            self.send_once('reply:' + str(update['update_id']) + ':' + str(i), response, destination)
+            self.send_once('reply:' + str(update['update_id']) + ':' + str(i), response, destination,
+                           reply_markup=refresh_keyboard())
 
     def run(self, interval=90):
         self.username = self.tg.call('getMe')['username']

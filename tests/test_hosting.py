@@ -1,4 +1,5 @@
 import datetime as dt
+from io import BytesIO
 import json
 from pathlib import Path
 import tempfile
@@ -8,8 +9,8 @@ from unittest.mock import patch
 from ai_responder import reset_runtime_state
 from api.source import authorized
 from api.telegram import (accepts_update, fetch_state, make_reply, state_is_stale,
-                          with_live_snapshots)
-from bot import SourceError, TZ, parse_week
+                          handler, with_live_failure, with_live_snapshots)
+from bot import REFRESH_BUTTON_TEXT, SourceError, TZ, parse_week
 from github_runner import (GitStateBot, KNOWN_FALSE_WEEK_DIGEST, checked_recently,
                            check_with_confirmation, git, refresh_stored_publications, run_checks,
                            repair_stored_week_mask_bug, validate_relay_payload)
@@ -78,6 +79,7 @@ class HostingTests(unittest.TestCase):
         self.assertEqual(result['photo'], 'confirmed-photo')
         self.assertIn('перепроверяю', result['caption'])
         self.assertEqual(result['parse_mode'], 'HTML')
+        self.assertTrue(result['reply_markup']['is_persistent'])
 
     def test_live_overlay_never_reuses_a_possibly_stale_photo(self):
         now = dt.datetime.now(TZ)
@@ -265,11 +267,86 @@ class HostingTests(unittest.TestCase):
         self.assertTrue(accepts_update(update, -100123))
 
     def test_new_utility_commands_are_accepted(self):
-        for command in ('ask', 'when', 'free', 'rooms', 'roast'):
+        for command in ('ask', 'when', 'free', 'rooms', 'refresh', 'roast'):
             update = {'message': {'chat': {'id': -100123, 'type': 'supergroup'},
                                   'from': {'id': 42},
                                   'text': f'/{command}@msutf_p223_schedule_bot вопрос'}}
             self.assertTrue(accepts_update(update, -100123))
+
+    def test_persistent_refresh_button_is_accepted_and_returns_a_live_result(self):
+        update = {'update_id': 404, 'message': {
+            'chat': {'id': -100123, 'type': 'supergroup'},
+            'from': {'id': 42},
+            'text': REFRESH_BUTTON_TEXT,
+        }}
+        self.assertTrue(accepts_update(update, -100123))
+        now = dt.datetime.now(TZ)
+        monday = now.date() - dt.timedelta(days=now.weekday())
+        state = {'schema': 1, 'kv': {
+            'last_success': now.isoformat(),
+            'week:' + monday.isoformat(): {'week': monday.isoformat(), 'lessons': []},
+            'live_refresh': {
+                'status': 'same',
+                'changed_weeks': [],
+                'checked_at': now.isoformat(),
+            },
+        }}
+        result = make_reply(update, state, -100123)
+        self.assertEqual(result['method'], 'sendMessage')
+        self.assertIn('изменений нет', result['text'])
+        self.assertEqual(result['reply_markup']['keyboard'][0][0]['text'], REFRESH_BUTTON_TEXT)
+
+    def test_webhook_button_forces_live_read_even_with_fresh_saved_state(self):
+        now = dt.datetime.now(TZ)
+        monday = now.date() - dt.timedelta(days=now.weekday())
+        snapshot = {'week': monday.isoformat(), 'lessons': []}
+        saved = {'schema': 1, 'kv': {
+            'last_success': now.isoformat(),
+            'week:' + monday.isoformat(): snapshot,
+        }}
+        update = {'update_id': 405, 'message': {
+            'chat': {'id': -100123, 'type': 'supergroup'},
+            'from': {'id': 42},
+            'text': REFRESH_BUTTON_TEXT,
+        }}
+        payload = json.dumps(update).encode()
+
+        class Request:
+            headers = {
+                'X-Telegram-Bot-Api-Secret-Token': 'secret',
+                'Content-Length': str(len(payload)),
+            }
+            rfile = BytesIO(payload)
+
+            def __init__(self):
+                self.response = None
+
+            def respond(self, code, data):
+                self.response = (code, data)
+
+        class LiveSource:
+            calls = 0
+
+            def __init__(self, **_options):
+                pass
+
+            def fetch(self):
+                type(self).calls += 1
+                return [snapshot]
+
+        request = Request()
+        environment = {
+            'WEBHOOK_SECRET': 'secret',
+            'TELEGRAM_CHAT_ID': '-100123',
+            'STATE_URL': 'https://raw.githubusercontent.com/speway/uebot/state/schedule.json',
+        }
+        with patch.dict('os.environ', environment, clear=True), \
+                patch('api.telegram.fetch_state', return_value=saved), \
+                patch('api.telegram.EduPage', LiveSource):
+            handler.do_POST(request)
+        self.assertEqual(LiveSource.calls, 1)
+        self.assertEqual(request.response[0], 200)
+        self.assertIn('изменений нет', request.response[1]['text'])
 
     def test_group_ai_mentions_and_replies_are_accepted_but_chatter_is_not(self):
         base = {'chat': {'id': -100123, 'type': 'supergroup'},
@@ -310,6 +387,27 @@ class HostingTests(unittest.TestCase):
         self.assertFalse(state_is_stale(fresh, now))
         self.assertIn('week:2026-09-14', fresh['kv'])
         self.assertTrue(fresh['live'])
+        self.assertEqual(fresh['kv']['live_refresh']['status'], 'changed')
+
+    def test_live_comparison_reports_same_changed_uncompared_and_failed(self):
+        now = dt.datetime(2026, 9, 10, 1, 0, tzinfo=TZ)
+        empty = {'week': '2026-09-14', 'lessons': []}
+        state = {'schema': 1, 'kv': {'week:2026-09-14': empty, 'sentinel': 7}}
+        same = with_live_snapshots(state, [empty], now)
+        self.assertEqual(same['kv']['live_refresh']['status'], 'same')
+
+        changed_snapshot = {'week': '2026-09-14', 'lessons': [{'subject': 'тест'}]}
+        changed = with_live_snapshots(state, [changed_snapshot], now)
+        self.assertEqual(changed['kv']['live_refresh']['status'], 'changed')
+        self.assertEqual(changed['kv']['live_refresh']['changed_weeks'], ['2026-09-14'])
+
+        uncompared = with_live_snapshots({'schema': 1, 'kv': {}}, [empty], now,
+                                         comparable=False)
+        self.assertEqual(uncompared['kv']['live_refresh']['status'], 'uncompared')
+
+        failed = with_live_failure(state, now)
+        self.assertEqual(failed['kv']['live_refresh']['status'], 'failed')
+        self.assertEqual(failed['kv']['sentinel'], 7)
 
     def test_detected_change_is_rechecked_inside_same_run(self):
         raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())

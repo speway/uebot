@@ -7,7 +7,8 @@ import socket
 import tempfile
 import unittest
 
-from bot import (Bot, SourceError, DeliveryError, TelegramRejected, EduPage, TZ,
+from bot import (Bot, SourceError, DeliveryError, TelegramRejected, EduPage,
+                 REFRESH_BUTTON_TEXT, TZ,
                  IPv4HTTPSConnection, IPv4HTTPSHandler, digest, ipv4_connection,
                  parse_week, render_day_reply, render_week, situational_roast,
                  week_caption)
@@ -414,8 +415,51 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn('Источник: отвечает', result)
         self.assertIn('Доставка: без ошибок', result)
         self.assertIn('AI-канал: ждёт настройки', result)
-        self.assertIn('Автопроверка: примерно каждые 5 минут', result)
+        self.assertIn('Автопроверка: примерно каждые 90 секунд', result)
         self.assertIn('<i>', result)
+
+    def test_refresh_message_distinguishes_same_change_and_failure(self):
+        self.bot.put('week:' + self.week['week'], self.week)
+        self.bot.put('live_refresh', {
+            'status': 'same',
+            'changed_weeks': [],
+            'checked_at': self.now.isoformat(),
+        })
+        same = self.bot.refresh_message(self.now)
+        self.assertIn('изменений нет', same)
+        self.assertIn('Эта неделя: 12 пар', same)
+
+        self.bot.put('live_refresh', {
+            'status': 'changed',
+            'changed_weeks': ['2026-09-14'],
+            'checked_at': self.now.isoformat(),
+        })
+        changed = self.bot.refresh_message(self.now)
+        self.assertIn('Нашёл изменение', changed)
+        self.assertIn('следующая неделя', changed)
+        self.assertIn('двух минут', changed)
+
+        self.bot.put('live_refresh', {
+            'status': 'failed',
+            'checked_at': self.now.isoformat(),
+        })
+        failed = self.bot.refresh_message(self.now)
+        self.assertIn('Сохранённое расписание не трогал', failed)
+
+    def test_refresh_button_dispatches_and_keeps_keyboard_visible(self):
+        self.bot.put('live_refresh', {
+            'status': 'failed',
+            'checked_at': self.now.isoformat(),
+        })
+        self.bot.handle({'update_id': 808, 'message': {
+            'chat': {'id': -100123, 'type': 'supergroup'},
+            'from': {'id': 42},
+            'text': REFRESH_BUTTON_TEXT,
+        }})
+        self.assertIn('EduPage сейчас не ответил', self.api.messages[-1][1])
+        keyboard = self.api.send_options[-1]['reply_markup']
+        self.assertTrue(keyboard['is_persistent'])
+        self.assertEqual(keyboard['keyboard'][0][0]['text'], REFRESH_BUTTON_TEXT)
 
     def test_status_summarizes_current_and_unpublished_next_week(self):
         self.bot.put('week:' + self.week['week'], self.week)
@@ -474,7 +518,11 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(methods.count('setMyShortDescription'), 1)
         command_call = next(params for method, params in self.api.edits if method == 'setMyCommands')
         names = {item['command'] for item in command_call['commands']}
-        self.assertTrue({'ask', 'when', 'free', 'rooms', 'roast'} <= names)
+        self.assertTrue({'ask', 'when', 'free', 'rooms', 'refresh', 'roast'} <= names)
+        self.assertEqual(len(self.api.messages), 1)
+        self.assertIn('Ручная проверка', self.api.messages[0][1])
+        keyboard = self.api.send_options[0]['reply_markup']
+        self.assertEqual(keyboard['keyboard'][0][0]['text'], REFRESH_BUTTON_TEXT)
 
 
 if __name__ == '__main__':

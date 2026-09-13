@@ -1,4 +1,4 @@
-"""Mobile-first weekly agenda rendered as a Telegram-safe PNG."""
+"""Landscape weekly agenda rendered as a Telegram-safe PNG."""
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from io import BytesIO
@@ -7,9 +7,10 @@ import re
 from PIL import Image, ImageDraw, ImageFont
 
 
-DESIGN_VERSION = 5
-WIDTH = 1080
-MARGIN = 54
+DESIGN_VERSION = 6
+WIDTH = 1920
+HEIGHT = 1080
+MARGIN = 48
 
 COLORS = {
     'paper': '#F3EFE6',
@@ -37,7 +38,7 @@ def _plural(number, one, few, many):
 
 
 def _fonts():
-    sizes = (20, 22, 24, 26, 28, 30, 32, 36, 42, 58)
+    sizes = (15, 16, 17, 18, 19, 20, 22, 24, 26, 28, 30, 32, 36, 42, 58, 64)
     return ({size: ImageFont.truetype('DejaVuSans.ttf', size) for size in sizes},
             {size: ImageFont.truetype('DejaVuSans-Bold.ttf', size) for size in sizes})
 
@@ -91,25 +92,27 @@ def _merge_day(lessons):
     return merged
 
 
-def _block_layout(draw, item, regular, bold):
-    title, kind = _subject_parts(item['subject'])
-    subject_lines = _wrap(draw, title, bold[32], 670)
-    teachers = ' / '.join(item.get('teachers', [])) or 'Преподаватель не указан'
-    teacher_lines = _wrap(draw, teachers, regular[24], 670)
-    groups = ', '.join(item.get('groups', []))
-    group_lines = _wrap(draw, groups, regular[22], 670) if groups else []
-    content_height = len(subject_lines) * 42 + len(teacher_lines) * 31 + len(group_lines) * 29
-    if kind:
-        content_height += 31
-    height = max(158, 40 + content_height)
-    return {
-        'item': item,
-        'title': subject_lines,
-        'kind': kind,
-        'teachers': teacher_lines,
-        'groups': group_lines,
-        'height': height,
-    }
+def _ellipsize(draw, text, font, max_width):
+    text = re.sub(r'\s+', ' ', str(text or '')).strip()
+    if draw.textlength(text, font=font) <= max_width:
+        return text
+    low, high = 0, len(text)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if draw.textlength(text[:middle].rstrip() + '…', font=font) <= max_width:
+            low = middle
+        else:
+            high = middle - 1
+    return text[:low].rstrip() + '…'
+
+
+def _limited_lines(draw, text, font, max_width, max_lines):
+    lines = _wrap(draw, text, font, max_width)
+    if len(lines) <= max_lines:
+        return lines
+    kept = lines[:max_lines - 1]
+    kept.append(_ellipsize(draw, ' '.join(lines[max_lines - 1:]), font, max_width))
+    return kept
 
 
 def _pill(draw, box, text, font, fill, color):
@@ -134,60 +137,48 @@ def render_image(snapshot):
     if by_day.get((monday + timedelta(days=6)).isoformat()):
         days.append(monday + timedelta(days=6))
 
-    rows = []
-    for day in days:
-        blocks = [_block_layout(probe, item, regular, bold)
-                  for item in _merge_day(by_day[day.isoformat()])]
-        row_height = 76 + (sum(block['height'] for block in blocks) if blocks else 92)
-        rows.append((day, blocks, row_height))
-
-    header_height = 330
-    unpublished_height = 400
-    gaps_height = 22 * (len(rows) - 1)
-    footer_height = 132
-    body_height = unpublished_height if not lessons else sum(row[2] for row in rows) + gaps_height
-    height = header_height + body_height + footer_height + MARGIN
-    if WIDTH + height > 9900 or max(WIDTH / height, height / WIDTH) > 20:
+    if WIDTH + HEIGHT > 9900 or max(WIDTH / HEIGHT, HEIGHT / WIDTH) > 20:
         raise ValueError('Timetable exceeds Telegram photo dimensions')
 
-    image = Image.new('RGB', (WIDTH, height), COLORS['paper'])
+    image = Image.new('RGB', (WIDTH, HEIGHT), COLORS['paper'])
     draw = ImageDraw.Draw(image)
 
-    # Header: restrained Bauhaus geometry, useful information stays dominant.
-    draw.rectangle((0, 0, WIDTH, 252), fill=COLORS['green'])
-    draw.ellipse((846, -92, 1108, 170), fill=COLORS['yellow'])
-    draw.rectangle((938, 150, 1080, 252), fill=COLORS['orange'])
-    draw.text((MARGIN, 38), 'УЕБОТ  /  П2—23', font=bold[24], fill='#DCE8E1')
-    draw.text((MARGIN, 85), 'РАСПИСАНИЕ', font=bold[58], fill=COLORS['white'])
+    # Wide Bauhaus header: the useful hierarchy remains louder than decoration.
+    draw.rectangle((0, 0, WIDTH, 196), fill=COLORS['green'])
+    draw.ellipse((1635, -152, 1975, 188), fill=COLORS['yellow'])
+    draw.rectangle((1772, 126, WIDTH, 196), fill=COLORS['orange'])
+    draw.text((MARGIN, 25), 'УЕБОТ  /  П2—23', font=bold[22], fill='#DCE8E1')
+    draw.text((MARGIN, 58), 'РАСПИСАНИЕ', font=bold[64], fill=COLORS['white'])
     last_day = days[-1]
-    draw.text((MARGIN, 166), f'{monday:%d.%m} — {last_day:%d.%m.%Y}',
-              font=regular[30], fill='#DCE8E1')
+    draw.text((MARGIN, 139), f'{monday:%d.%m} — {last_day:%d.%m.%Y}',
+              font=regular[26], fill='#DCE8E1')
 
     lesson_count = len(lessons)
     active_days = len({item['date'] for item in lessons})
     pair_word = _plural(lesson_count, 'ПАРА', 'ПАРЫ', 'ПАР')
     day_word = _plural(active_days, 'ДЕНЬ С ПАРАМИ', 'ДНЯ С ПАРАМИ', 'ДНЕЙ С ПАРАМИ')
     if lessons:
-        _pill(draw, (MARGIN, 272, 264, 320), f'{lesson_count} {pair_word}', bold[22],
+        _pill(draw, (1070, 45, 1295, 97), f'{lesson_count} {pair_word}', bold[20],
               COLORS['orange_soft'], COLORS['ink'])
-        _pill(draw, (282, 272, 574, 320), f'{active_days} {day_word}', bold[20],
+        _pill(draw, (1315, 45, 1660, 97), f'{active_days} {day_word}', bold[18],
               COLORS['green_soft'], COLORS['ink'])
     else:
-        _pill(draw, (MARGIN, 272, 466, 320), 'ЕЩЁ НЕ ОПУБЛИКОВАНО', bold[20],
+        _pill(draw, (1070, 45, 1515, 97), 'ЕЩЁ НЕ ОПУБЛИКОВАНО', bold[19],
               COLORS['orange_soft'], COLORS['ink'])
-    _pill(draw, (720, 272, WIDTH-MARGIN, 320), 'ТАШКЕНТ · UTC+5', bold[20],
+    _pill(draw, (1070, 116, 1440, 166), 'ТАШКЕНТ · UTC+5', bold[18],
           COLORS['white'], COLORS['muted'])
 
     names = ['ПОНЕДЕЛЬНИК', 'ВТОРНИК', 'СРЕДА', 'ЧЕТВЕРГ', 'ПЯТНИЦА', 'СУББОТА', 'ВОСКРЕСЕНЬЕ']
     accents = [COLORS['orange'], COLORS['blue'], COLORS['yellow'], COLORS['green'],
                COLORS['orange'], COLORS['blue'], COLORS['yellow']]
-    y = header_height
-    card_right = WIDTH - MARGIN
     if not lessons:
-        bottom = y + unpublished_height
-        draw.rounded_rectangle((MARGIN, y, card_right, bottom), radius=24, fill=COLORS['white'])
-        draw.rounded_rectangle((MARGIN, y, MARGIN + 16, bottom), radius=8, fill=COLORS['orange'])
-        draw.text((MARGIN + 42, y + 52), 'РАСПИСАНИЯ ЕЩЁ НЕТ', font=bold[42], fill=COLORS['ink'])
+        top, bottom = 230, 905
+        card_right = WIDTH - MARGIN
+        draw.rounded_rectangle((MARGIN, top, card_right, bottom), radius=30, fill=COLORS['white'])
+        draw.rounded_rectangle((MARGIN, top, MARGIN + 18, bottom), radius=9, fill=COLORS['orange'])
+        draw.ellipse((1395, 315, 1775, 695), fill=COLORS['green_soft'])
+        draw.rectangle((1575, 600, card_right, bottom), fill=COLORS['orange_soft'])
+        draw.text((MARGIN + 70, top + 80), 'РАСПИСАНИЯ ЕЩЁ НЕТ', font=bold[58], fill=COLORS['ink'])
         copy = [
             'Сидите дальше в неведении, ебучие лохи.',
             'EduPage пока не опубликовал занятия П2—23.',
@@ -196,67 +187,97 @@ def render_image(snapshot):
             'Как только деканат родит расписание,',
             'я первым испорчу вам настроение.',
         ]
-        copy_y = y + 130
+        copy_y = top + 185
         for line in copy:
-            draw.text((MARGIN + 42, copy_y), line, font=bold[28] if line.startswith('Это') else regular[28],
+            draw.text((MARGIN + 72, copy_y), line, font=bold[30] if line.startswith('Это') else regular[30],
                       fill=COLORS['ink'] if line else COLORS['muted'])
-            copy_y += 42
-        y = bottom + 22
-    for day, blocks, row_height in (rows if lessons else []):
-        bottom = y + row_height
-        draw.rounded_rectangle((MARGIN, y, card_right, bottom), radius=24, fill=COLORS['white'])
-        accent = accents[day.weekday()]
-        draw.rounded_rectangle((MARGIN, y, MARGIN + 16, bottom), radius=8, fill=accent)
-        draw.text((MARGIN + 38, y + 23), names[day.weekday()], font=bold[28], fill=COLORS['ink'])
-        draw.text((card_right - 28, y + 25), day.strftime('%d.%m'), font=bold[26],
-                  fill=COLORS['muted'], anchor='ra')
-        draw.line((MARGIN + 38, y + 75, card_right - 28, y + 75), fill=COLORS['line'], width=2)
-        content_y = y + 76
+            copy_y += 46
+    else:
+        grid_top, grid_bottom, gap = 220, 928, 22
+        columns = 4 if len(days) > 6 else 3
+        card_width = (WIDTH - 2 * MARGIN - gap * (columns - 1)) // columns
+        card_height = (grid_bottom - grid_top - gap) // 2
+        for index, day in enumerate(days):
+            row, column = divmod(index, columns)
+            left = MARGIN + column * (card_width + gap)
+            top = grid_top + row * (card_height + gap)
+            right, bottom = left + card_width, top + card_height
+            accent = accents[day.weekday()]
+            draw.rounded_rectangle((left, top, right, bottom), radius=24, fill=COLORS['white'])
+            draw.rounded_rectangle((left, top, left + 12, bottom), radius=6, fill=accent)
+            draw.text((left + 28, top + 18), names[day.weekday()], font=bold[24], fill=COLORS['ink'])
+            draw.text((right - 24, top + 19), day.strftime('%d.%m'), font=bold[22],
+                      fill=COLORS['muted'], anchor='ra')
+            header_bottom = top + 62
+            draw.line((left + 28, header_bottom, right - 22, header_bottom),
+                      fill=COLORS['line'], width=2)
+            blocks = _merge_day(by_day[day.isoformat()])
+            if not blocks:
+                draw.text((left + 30, top + 135), 'ПАР НЕТ', font=bold[36], fill=COLORS['muted'])
+                draw.text((left + 30, top + 190), 'можно бездельничать официально',
+                          font=regular[20], fill=COLORS['muted'])
+                continue
 
-        if not blocks:
-            draw.text((MARGIN + 40, content_y + 25), 'ПАР НЕТ', font=bold[30], fill=COLORS['muted'])
-            draw.text((MARGIN + 230, content_y + 28), 'можно бездельничать официально',
-                      font=regular[24], fill=COLORS['muted'])
-        for index, block in enumerate(blocks):
-            item = block['item']
-            block_bottom = content_y + block['height']
-            if index:
-                draw.line((MARGIN + 38, content_y, card_right - 28, content_y),
-                          fill=COLORS['line'], width=2)
-            time_text = f"{item['start']}–{item['end']}"
-            draw.text((MARGIN + 40, content_y + 28), time_text, font=bold[28], fill=COLORS['ink'])
-            if item['_pairs'] > 1:
-                label = f"{item['_pairs']} ПАРЫ" if item['_pairs'] in (2, 3, 4) else f"{item['_pairs']} ПАР"
-                _pill(draw, (MARGIN + 40, content_y + 75, MARGIN + 177, content_y + 113),
-                      label, bold[20], COLORS['orange_soft'], COLORS['ink'])
-            text_x = MARGIN + 235
-            text_y = content_y + 23
-            if block['kind']:
-                draw.text((text_x, text_y), block['kind'], font=bold[20], fill=accent)
-                text_y += 31
-            for line in block['title']:
-                draw.text((text_x, text_y), line, font=bold[32], fill=COLORS['ink'])
-                text_y += 42
-            text_y += 4
-            for line in block['teachers']:
-                draw.text((text_x, text_y), line, font=regular[24], fill=COLORS['muted'])
-                text_y += 31
-            rooms = ', '.join(item.get('rooms', [])) or 'не указана'
-            draw.text((card_right - 28, block_bottom - 38), 'АУД. ' + rooms,
-                      font=bold[24], fill=COLORS['ink'], anchor='ra')
-            for line in block['groups']:
-                draw.text((text_x, text_y), line, font=regular[22], fill=COLORS['blue'])
-                text_y += 29
-            content_y = block_bottom
-        y = bottom + 22
+            available = bottom - header_bottom - 12
+            block_height = available / len(blocks)
+            if len(blocks) <= 1:
+                subject_size, detail_size, time_size = 28, 19, 22
+            elif len(blocks) == 2:
+                subject_size, detail_size, time_size = 24, 18, 20
+            elif len(blocks) == 3:
+                subject_size, detail_size, time_size = 20, 16, 18
+            else:
+                subject_size, detail_size, time_size = 18, 15, 17
+            if card_width < 500:
+                subject_size, detail_size, time_size = min(subject_size, 18), 15, 15
+            subject_font, detail_font, time_font = bold[subject_size], regular[detail_size], bold[time_size]
+            subject_line_height = subject_size + 5
+            # Keep a real gutter after the widest HH:MM–HH:MM label.  The old
+            # portrait coordinates looked acceptable in tests but overlapped as
+            # soon as the cards became columns in the landscape grid.
+            time_width = 174 if card_width >= 560 else 116
+            text_left = left + 28 + time_width
+            text_width = right - 24 - text_left
+            for block_index, item in enumerate(blocks):
+                block_top = header_bottom + block_index * block_height
+                block_bottom = header_bottom + (block_index + 1) * block_height
+                if block_index:
+                    draw.line((left + 28, round(block_top), right - 22, round(block_top)),
+                              fill=COLORS['line'], width=2)
+                draw.text((left + 28, block_top + 11), f"{item['start']}–{item['end']}",
+                          font=time_font, fill=COLORS['ink'])
+                title, kind = _subject_parts(item['subject'])
+                pair_label = ''
+                if item['_pairs'] > 1:
+                    pair_label = f"{item['_pairs']} ПАРЫ" if item['_pairs'] in (2, 3, 4) else f"{item['_pairs']} ПАР"
+                meta = ' · '.join(filter(None, (kind, pair_label)))
+                if meta:
+                    draw.text((left + 28, block_top + 39),
+                              _ellipsize(draw, meta, bold[15], time_width - 10),
+                              font=bold[15], fill=accent)
+                max_title_lines = 2 if block_height >= 84 else 1
+                title_lines = _limited_lines(draw, title, subject_font, text_width, max_title_lines)
+                title_y = block_top + 8
+                for line in title_lines:
+                    draw.text((text_left, title_y), line, font=subject_font, fill=COLORS['ink'])
+                    title_y += subject_line_height
+                teachers = ' / '.join(item.get('teachers', [])) or 'Преподаватель не указан'
+                rooms = ', '.join(item.get('rooms', [])) or 'не указана'
+                groups = ', '.join(item.get('groups', []))
+                details = teachers + '  ·  ауд. ' + rooms + (('  ·  ' + groups) if groups else '')
+                detail_y = min(title_y + 2, block_bottom - detail_size - 9)
+                draw.text((text_left, detail_y), _ellipsize(draw, details, detail_font, text_width),
+                          font=detail_font, fill=COLORS['muted'])
 
-    footer_y = y + 4
-    draw.text((MARGIN, footer_y), 'Источник: msu2006.edupage.org  ·  только П2—23',
-              font=regular[22], fill=COLORS['muted'])
-    draw.text((MARGIN, footer_y + 38), '/today  день   /next  дальше   /ask  спросить AI   /rooms  аудитории',
-              font=bold[22], fill=COLORS['ink'])
+    footer_y = 952
+    draw.line((MARGIN, footer_y - 14, WIDTH - MARGIN, footer_y - 14), fill=COLORS['line'], width=2)
+    draw.text((MARGIN, footer_y), 'Источник: msu2006.edupage.org  ·  только П2—23  ·  время Ташкента',
+              font=regular[20], fill=COLORS['muted'])
+    draw.text((MARGIN, footer_y + 39),
+              '/today  день   /next  дальше   /refresh  проверить   /ask  спросить AI   /rooms  аудитории',
+              font=bold[20], fill=COLORS['ink'])
     draw.text((MARGIN, footer_y + 78), 'Сохрани. Утренний ты — бесполезный мудак без памяти.',
-              font=regular[22], fill=COLORS['muted'])
+              font=regular[19], fill=COLORS['muted'])
 
     output = BytesIO()
     image.save(output, format='PNG', optimize=True)

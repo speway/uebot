@@ -15,17 +15,23 @@ class ImageTests(unittest.TestCase):
 
     def test_real_week_is_valid_telegram_image(self):
         im=Image.open(BytesIO(render_image(self.snapshot())))
-        self.assertEqual(im.width,1080)
-        self.assertGreater(im.height,im.width)  # Portrait agenda stays readable on a phone.
+        self.assertEqual(im.size,(1920,1080))
+        self.assertGreater(im.width,im.height)
         self.assertLess(im.width+im.height,10000)
         self.assertLess(im.height/im.width,20)
 
     def test_unpublished_week_is_a_valid_placeholder_image(self):
         snapshot=self.snapshot();snapshot['lessons']=[]
         im=Image.open(BytesIO(render_image(snapshot)))
-        self.assertEqual(im.width,1080)
-        self.assertGreater(im.height,700)
+        self.assertEqual(im.size,(1920,1080))
         self.assertLess(im.width+im.height,10000)
+
+    def test_seven_day_week_uses_the_compact_landscape_grid(self):
+        snapshot=self.snapshot()
+        sunday=dict(snapshot['lessons'][0],date='2026-09-13')
+        snapshot['lessons'].append(sunday)
+        im=Image.open(BytesIO(render_image(snapshot)))
+        self.assertEqual(im.size,(1920,1080))
 
     def test_consecutive_identical_pairs_are_one_visual_block(self):
         monday=[x for x in self.snapshot()['lessons'] if x['date']=='2026-09-07']
@@ -35,7 +41,7 @@ class ImageTests(unittest.TestCase):
                          ('09:00','12:15',2))
 
     def test_design_version_forces_existing_photos_to_refresh(self):
-        self.assertGreaterEqual(DESIGN_VERSION,5)
+        self.assertGreaterEqual(DESIGN_VERSION,6)
 
     def test_week_webhook_reuses_photo(self):
         now=dt.datetime.now(TZ);monday=now.date()-dt.timedelta(days=now.weekday())

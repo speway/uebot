@@ -9,7 +9,8 @@ import urllib.request
 
 from ai_responder import (BOT_USERNAME, extract_question, is_ai_request,
                           private_ai_allowed, provider_ready)
-from bot import Bot, EduPage, TZ, week_caption
+from bot import (Bot, EduPage, REFRESH_BUTTON_TEXT, TZ, digest, refresh_keyboard,
+                 week_caption)
 
 
 STALE_AFTER = dt.timedelta(minutes=30)
@@ -26,12 +27,15 @@ def accepts_update(update, chat_id):
         return False
     if chat.get('id') != chat_id and chat.get('type') != 'private':
         return False
-    parts = (message.get('text') or '').strip().split()
+    text = (message.get('text') or '').strip()
+    if text == REFRESH_BUTTON_TEXT:
+        return True
+    parts = text.split()
     if not parts:
         return False
     command, _, address = parts[0].partition('@')
     known_command = (command in ('/start', '/help', '/today', '/tomorrow', '/next', '/when',
-                                 '/free', '/rooms', '/week', '/nextweek', '/roast', '/status')
+                                 '/free', '/rooms', '/week', '/nextweek', '/refresh', '/roast', '/status')
                      and (not address or address.lower() == BOT_USERNAME))
     return known_command or is_ai_request(update, chat_id, BOT_USERNAME)
 
@@ -49,13 +53,34 @@ def state_is_stale(state, now=None):
     return (now or dt.datetime.now(TZ)) - value.astimezone(TZ) > STALE_AFTER
 
 
-def with_live_snapshots(state, snapshots, now=None):
+def with_live_snapshots(state, snapshots, now=None, comparable=True):
     """Overlay a fast on-demand read without mutating the persisted Git snapshot."""
     result = {'schema': 1, 'kv': dict(state.get('kv', {})), 'live': True}
+    changed_weeks = []
     for snapshot in snapshots:
+        previous = result['kv'].get('week:' + snapshot['week'])
+        if (not isinstance(previous, dict) or
+                digest(previous.get('lessons', [])) != digest(snapshot.get('lessons', []))):
+            changed_weeks.append(snapshot['week'])
         result['kv']['week:' + snapshot['week']] = snapshot
-    result['kv']['last_success'] = (now or dt.datetime.now(TZ)).isoformat()
+    checked_at = (now or dt.datetime.now(TZ)).isoformat()
+    result['kv']['last_success'] = checked_at
     result['kv']['source_error'] = None
+    result['kv']['live_refresh'] = {
+        'status': ('changed' if changed_weeks else 'same') if comparable else 'uncompared',
+        'changed_weeks': changed_weeks,
+        'checked_at': checked_at,
+    }
+    return result
+
+
+def with_live_failure(state, now=None):
+    """Record a failed manual attempt while preserving every saved lesson."""
+    result = {'schema': 1, 'kv': dict(state.get('kv', {}))}
+    result['kv']['live_refresh'] = {
+        'status': 'failed',
+        'checked_at': (now or dt.datetime.now(TZ)).isoformat(),
+    }
     return result
 
 
@@ -122,7 +147,8 @@ def make_reply(update, state, chat_id, runtime_oidc_token=None):
             elif state.get('kv', {}).get('pending_confirmation'):
                 response['text'] += ('\n\n<i>EduPage что-то поменял. Перепроверяю, потому что одного '
                                      'кривого ответа для вашего коллективного пиздеца достаточно.</i>')
-        command=update.get('message',{}).get('text','').strip().split()[0].split('@')[0]
+        text = update.get('message', {}).get('text', '').strip()
+        command = '/refresh' if text == REFRESH_BUTTON_TEXT else text.split()[0].split('@')[0]
         if command in ('/week','/nextweek'):
             today=dt.datetime.now(TZ).date()
             monday=today-dt.timedelta(days=today.weekday())+dt.timedelta(days=7 if command=='/nextweek' else 0)
@@ -135,7 +161,7 @@ def make_reply(update, state, chat_id, runtime_oidc_token=None):
                 elif state.get('kv',{}).get('pending_confirmation'):
                     caption += '\n\n<i>Замечено изменение; перепроверяю, чтобы вы не побежали не туда всей этой прекрасной толпой.</i>'
                 return {'method':'sendPhoto','chat_id':response['chat_id'],'photo':photo,'caption':caption,
-                        'parse_mode':'HTML'}
+                        'parse_mode':'HTML', 'reply_markup': response.get('reply_markup', refresh_keyboard())}
         return response
     finally:
         bot.db.close()
@@ -177,7 +203,8 @@ class handler(BaseHTTPRequestHandler):
             if not accepts_update(update, chat_id):
                 return self.respond(200, {'ok': True})
             text = update['message']['text'].strip()
-            command = text.split()[0].split('@')[0]
+            manual_refresh = text == REFRESH_BUTTON_TEXT
+            command = '/refresh' if manual_refresh else text.split()[0].split('@')[0]
             ai_request = is_ai_request(update, chat_id, BOT_USERNAME)
             if command in ('/start', '/help'):
                 reply = make_reply(update, {'kv': {}}, chat_id, runtime_oidc_token)
@@ -192,19 +219,26 @@ class handler(BaseHTTPRequestHandler):
             if ai_request and not extract_question(update, BOT_USERNAME)[0]:
                 return self.respond(200, make_reply(update, {'kv': {}}, chat_id,
                                                     runtime_oidc_token))
-            source_available = True
+            state_available = True
             try:
                 state = fetch_state(os.environ['STATE_URL'])
             except Exception:
-                if not ai_request:
+                if not ai_request and not manual_refresh:
                     raise
                 # General questions must not die merely because the timetable
                 # snapshot is unavailable. Schedule questions get an explicit
                 # unknown/stale context and therefore cannot invent lessons.
-                source_available = False
+                state_available = False
                 state = {'schema': 1, 'kv': {'source_error': True}}
-            if (command in ('/today', '/tomorrow', '/next', '/when', '/free', '/rooms', '/week',
-                            '/nextweek', '/roast') or ai_request) and state_is_stale(state) and source_available:
+            if manual_refresh:
+                try:
+                    state = with_live_snapshots(
+                        state, EduPage(timeout=8, attempts=1).fetch(), comparable=state_available)
+                except Exception:
+                    state = with_live_failure(state)
+            elif ((command in ('/today', '/tomorrow', '/next', '/when', '/free', '/rooms', '/week',
+                               '/nextweek', '/roast') or ai_request) and state_is_stale(state)
+                  and state_available):
                 try:
                     # Keep Telegram's webhook comfortably below its timeout. If the
                     # live read fails, make_reply transparently uses saved data.
