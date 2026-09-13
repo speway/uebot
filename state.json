@@ -63,6 +63,9 @@
       "message_id": 34398,
       "status": "sent"
     },
+    "sent:schedule-joke-button:v1": {
+      "status": "pending"
+    },
     "sent:tomorrow:2026-09-11": {
       "message_id": 34360,
       "status": "sent"
