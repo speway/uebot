@@ -849,9 +849,14 @@ class Bot:
         if lessons:
             self.send_once('tomorrow:' + tomorrow.isoformat(), render_day_reply(tomorrow, lessons, now))
 
-    def failed_check(self, exc):
+    def failed_check(self, exc, now=None):
         self.last_error = type(exc).__name__
-        self.put('source_error', {'type': self.last_error, 'at': dt.datetime.now(TZ).isoformat()})
+        record = {'type': self.last_error, 'at': (now or dt.datetime.now(TZ)).isoformat()}
+        if isinstance(exc, SourceError):
+            # SourceError text contains bounded public parser/network diagnostics,
+            # unlike arbitrary exceptions that could accidentally contain secrets.
+            record['detail'] = str(exc)[:400]
+        self.put('source_error', record)
         with self.lock:
             keys = [r[0] for r in self.db.execute("SELECT key FROM kv WHERE key LIKE 'candidate:%'")]
         for key in keys:
@@ -1217,7 +1222,7 @@ class Bot:
         for i, response in enumerate(messages):
             self.send_once('reply:' + str(update['update_id']) + ':' + str(i), response, destination)
 
-    def run(self, interval=300):
+    def run(self, interval=90):
         self.username = self.tg.call('getMe')['username']
         self.configure()
         webhook = self.tg.call('getWebhookInfo')
@@ -1273,7 +1278,7 @@ def main():
         bot.configure()
         bot.check()
     else:
-        bot.run(max(60, int(os.getenv('CHECK_INTERVAL_SECONDS', '300'))))
+        bot.run(max(60, int(os.getenv('CHECK_INTERVAL_SECONDS', '90'))))
 
 
 if __name__ == '__main__':

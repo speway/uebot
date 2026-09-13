@@ -11,7 +11,7 @@ from api.telegram import (accepts_update, fetch_state, make_reply, state_is_stal
                           with_live_snapshots)
 from bot import SourceError, TZ, parse_week
 from github_runner import (GitStateBot, KNOWN_FALSE_WEEK_DIGEST, checked_recently,
-                           check_with_confirmation, git, refresh_stored_publications,
+                           check_with_confirmation, git, refresh_stored_publications, run_checks,
                            repair_stored_week_mask_bug, validate_relay_payload)
 from test_bot import FakeTelegram, META
 
@@ -126,6 +126,72 @@ class HostingTests(unittest.TestCase):
             self.assertIs(state_vercel['git']['deploymentEnabled'], False)
         finally:
             restored.db.close()
+
+    def test_unchanged_checks_only_commit_a_periodic_heartbeat(self):
+        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())
+        snapshot = parse_week(raw, META)
+        bot = GitStateBot(self.api, -100123, str(self.root / 'heartbeat.db'), self.state)
+        start = dt.datetime(2026, 9, 7, 7, tzinfo=TZ)
+        try:
+            bot.check([snapshot], start)
+            initial = int(git('rev-list', '--count', 'HEAD', cwd=self.state).stdout)
+            bot.check([snapshot], start + dt.timedelta(minutes=1))
+            self.assertEqual(int(git('rev-list', '--count', 'HEAD', cwd=self.state).stdout), initial)
+            bot.check([snapshot], start + dt.timedelta(minutes=11))
+            self.assertEqual(int(git('rev-list', '--count', 'HEAD', cwd=self.state).stdout), initial + 1)
+        finally:
+            bot.db.close()
+
+    def test_repeated_source_error_is_bounded_and_keeps_safe_detail(self):
+        bot = GitStateBot(self.api, -100123, str(self.root / 'errors.db'), self.state)
+        start = dt.datetime(2026, 9, 7, 7, tzinfo=TZ)
+        try:
+            bot.failed_check(SourceError('EduPage: тестовая поломка'), start)
+            initial = int(git('rev-list', '--count', 'HEAD', cwd=self.state).stdout)
+            self.assertEqual(bot.get('source_error')['detail'], 'EduPage: тестовая поломка')
+            bot.failed_check(SourceError('EduPage: тестовая поломка'), start + dt.timedelta(minutes=5))
+            self.assertEqual(int(git('rev-list', '--count', 'HEAD', cwd=self.state).stdout), initial)
+            bot.failed_check(SourceError('EduPage: тестовая поломка'), start + dt.timedelta(minutes=31))
+            self.assertEqual(int(git('rev-list', '--count', 'HEAD', cwd=self.state).stdout), initial + 1)
+        finally:
+            bot.db.close()
+
+    def test_watcher_recovers_from_a_transient_source_failure(self):
+        class WatchBot:
+            def __init__(self):
+                self.failures = []
+                self.snapshots = []
+
+            def check(self, snapshots, _now=None):
+                self.snapshots.append(snapshots)
+
+            def failed_check(self, exc):
+                self.failures.append(str(exc))
+
+            def _items(self, _prefix):
+                return []
+
+        current = [0.0]
+        calls = []
+
+        def clock():
+            return current[0]
+
+        def sleep(seconds):
+            current[0] += seconds
+
+        def fetcher():
+            calls.append(True)
+            if len(calls) == 1:
+                raise SourceError('временный сбой')
+            return [{'week': '2026-09-07', 'lessons': []}]
+
+        bot = WatchBot()
+        run_checks(bot, fetcher, watch_seconds=181, interval_seconds=90,
+                   sleeper=sleep, clock=clock)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(bot.failures, ['временный сбой'])
+        self.assertEqual(len(bot.snapshots), 2)
 
     def test_git_failure_prevents_telegram_send(self):
         git('remote', 'set-url', 'origin', str(self.root / 'absent.git'), cwd=self.state)

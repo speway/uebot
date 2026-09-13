@@ -1,6 +1,7 @@
-"""One scheduled run. Persist every send reservation to Git before Telegram."""
+"""Bounded schedule watcher. Persist every send reservation before Telegram."""
 import datetime as dt
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
@@ -18,6 +19,10 @@ STATE_BRANCH_VERCEL_CONFIG = json.dumps({
 }, indent=2) + '\n'
 MINIMUM_SOURCE_INTERVAL = dt.timedelta(minutes=4)
 CONFIRMATION_RECHECK_SECONDS = 15
+STATE_HEARTBEAT_INTERVAL = dt.timedelta(minutes=10)
+SOURCE_ERROR_HEARTBEAT_INTERVAL = dt.timedelta(minutes=30)
+DEFAULT_CHECK_INTERVAL_SECONDS = 90
+MAX_CONSECUTIVE_SOURCE_FAILURES = 10
 WEEK_MASK_STATE_VERSION = 2
 PUBLICATION_STYLE_VERSION = 5
 KNOWN_FALSE_WEEK = '2026-09-14'
@@ -46,13 +51,20 @@ def validate_relay_payload(payload):
 
 
 def fetch_snapshots():
-    """Prefer Vercel's network path, then fall back to the runner's direct path."""
+    """Read EduPage directly, with the authenticated Vercel route as fallback."""
     url = os.getenv('SOURCE_RELAY_URL', '')
     secret = os.getenv('WEBHOOK_SECRET', '')
+    if url and url != SOURCE_RELAY:
+        raise RuntimeError('Unexpected schedule relay URL')
+    direct_error = None
+    try:
+        # Frequent watchers should not spend Vercel function time when the
+        # runner can reach the public source itself.
+        return EduPage(timeout=15, attempts=1).fetch()
+    except SourceError as exc:
+        direct_error = exc
     relay_error = None
     if url and secret:
-        if url != SOURCE_RELAY:
-            raise RuntimeError('Unexpected schedule relay URL')
         request = urllib.request.Request(url, headers={'X-Schedule-Source-Secret': secret,
                                                        'User-Agent': 'P223ScheduleBot/1.0'})
         try:
@@ -66,14 +78,9 @@ def fetch_snapshots():
         except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError, TypeError) as exc:
             reason = getattr(exc, 'reason', exc)
             relay_error = SourceError('Schedule relay connection: ' + type(reason).__name__)
-    try:
-        # Hosted routes sometimes stall selectively. Two shorter direct attempts
-        # give the workflow another full retry without hitting its eight-minute cap.
-        return EduPage(timeout=18, attempts=2).fetch()
-    except SourceError as direct_error:
-        if relay_error:
-            raise SourceError(str(relay_error) + '; direct source: ' + str(direct_error)) from None
-        raise
+    if relay_error:
+        raise SourceError(str(direct_error) + '; relay: ' + str(relay_error)) from None
+    raise direct_error
 
 
 def checked_recently(value, now=None):
@@ -97,6 +104,47 @@ def check_with_confirmation(bot, fetcher=fetch_snapshots, sleeper=time.sleep, no
     if pending:
         sleeper(CONFIRMATION_RECHECK_SECONDS)
         bot.check(fetcher(), now)
+
+
+def run_checks(bot, fetcher=fetch_snapshots, watch_seconds=0,
+               interval_seconds=DEFAULT_CHECK_INTERVAL_SECONDS, sleeper=time.sleep,
+               clock=time.monotonic, stop_requested=None,
+               max_source_failures=MAX_CONSECUTIVE_SOURCE_FAILURES):
+    """Run once or keep a bounded watcher alive between unreliable cron events."""
+    watch_seconds = max(0, int(watch_seconds))
+    interval_seconds = max(60, int(interval_seconds))
+    max_source_failures = max(1, int(max_source_failures))
+    watching = watch_seconds > 0
+    deadline = clock() + watch_seconds
+    first = True
+    consecutive_source_failures = 0
+    while first or not watching or clock() < deadline:
+        first = False
+        started = clock()
+        try:
+            check_with_confirmation(bot, fetcher, sleeper)
+            consecutive_source_failures = 0
+        except DeliveryError:
+            # Telegram failures need a red workflow and operator-visible state;
+            # blindly continuing could conceal an unresolved send reservation.
+            raise
+        except SourceError as exc:
+            bot.failed_check(exc)
+            consecutive_source_failures += 1
+            if not watching or consecutive_source_failures >= max_source_failures:
+                raise RuntimeError('Check failed: ' + str(exc)) from None
+            logging.warning('Schedule source unavailable (%s/%s): %s',
+                            consecutive_source_failures, max_source_failures, exc)
+        if not watching:
+            return
+        if stop_requested and stop_requested():
+            logging.info('A newer main revision is available; handing off to the queued watcher.')
+            return
+        remaining = deadline - clock()
+        if remaining <= 0:
+            return
+        elapsed = clock() - started
+        sleeper(min(max(0, interval_seconds - elapsed), remaining))
 
 
 def repair_stored_week_mask_bug(bot, now=None):
@@ -166,6 +214,7 @@ class GitStateBot(Bot):
         super().__init__(telegram, chat_id, database)
         self.state_dir = Path(state_dir)
         self.state_file = self.state_dir / 'state.json'
+        self._last_persisted_success = None
         if require_existing and not self.state_file.exists():
             raise RuntimeError('Existing state branch is incomplete; refusing to resend baseline')
         if self.state_file.exists():
@@ -174,9 +223,17 @@ class GitStateBot(Bot):
                 raise RuntimeError('Unsupported persisted state; refusing fresh initialization')
             for key, value in data['kv'].items():
                 Bot.put(self, key, value)
+        self._last_persisted_success = self._timestamp(self.get('last_success'))
 
-    def put(self, key, value):
-        super().put(key, value)
+    @staticmethod
+    def _timestamp(value):
+        try:
+            parsed = dt.datetime.fromisoformat(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed.tzinfo else None
+
+    def _persist(self):
         with self.lock:
             state = {key: json.loads(value) for key, value in self.db.execute('SELECT key, value FROM kv ORDER BY key')}
         self.state_file.write_text(json.dumps({'schema': 1, 'kv': state}, ensure_ascii=False, sort_keys=True, indent=2))
@@ -195,9 +252,44 @@ class GitStateBot(Bot):
         if changed:
             git('commit', '-m', 'Persist schedule check state', cwd=self.state_dir)
             git('push', 'origin', 'HEAD:state', cwd=self.state_dir)
+        self._last_persisted_success = self._timestamp(state.get('last_success'))
+
+    def put(self, key, value):
+        previous = self.get(key, object())
+        if previous == value:
+            return
+        if key == 'source_error' and value and isinstance(previous, dict):
+            previous_at = self._timestamp(previous.get('at'))
+            current_at = self._timestamp(value.get('at'))
+            same_error = (previous.get('type'), previous.get('detail')) == \
+                         (value.get('type'), value.get('detail'))
+            if same_error and previous_at and current_at and \
+                    dt.timedelta(0) <= current_at - previous_at < SOURCE_ERROR_HEARTBEAT_INTERVAL:
+                return
+        super().put(key, value)
+        if key == 'last_success':
+            current = self._timestamp(value)
+            if current and self._last_persisted_success and \
+                    dt.timedelta(0) <= current - self._last_persisted_success < STATE_HEARTBEAT_INTERVAL:
+                return
+        self._persist()
+
+
+def main_branch_changed(expected_sha):
+    """Let a safe completed cycle yield quickly after code is updated."""
+    if not expected_sha:
+        return False
+    try:
+        result = git('ls-remote', 'origin', 'refs/heads/main')
+    except RuntimeError:
+        logging.warning('Could not check whether main changed; keeping the current watcher alive.')
+        return False
+    fields = result.stdout.strip().split()
+    return len(fields) >= 2 and fields[0] != expected_sha
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     token = os.environ['TELEGRAM_BOT_TOKEN']
     chat_id = os.environ['TELEGRAM_CHAT_ID']
     # GitHub Actions serializes all runs through a single concurrency group.
@@ -233,20 +325,27 @@ def main():
                     if not bot.get('image:' + week):
                         bot.put(key, None)
             bot.put('delivery_attention', False)
-        elif os.getenv('GITHUB_EVENT_NAME') == 'schedule' and checked_recently(bot.get('last_success')):
+        watch_seconds = max(0, int(os.getenv('WATCH_SECONDS', '0')))
+        if not watch_seconds and os.getenv('GITHUB_EVENT_NAME') == 'schedule' and checked_recently(bot.get('last_success')):
             # Scheduler delays can release queued jobs only seconds apart.
             # Only overlapping scheduled runs are skipped;
             # code pushes and manual runs must publish their requested refresh.
             return
-        try:
-            check_with_confirmation(bot)
-        except DeliveryError:
-            # Publication failures must never mark a successful source fetch as failed.
-            raise
-        except Exception as exc:
-            bot.failed_check(exc)
-            detail = str(exc) if type(exc).__name__ == 'SourceError' else type(exc).__name__
-            raise RuntimeError('Check failed: ' + detail) from None
+        last_ref_check = [0.0]
+
+        def newer_main_available():
+            current = time.monotonic()
+            if current - last_ref_check[0] < 300:
+                return False
+            last_ref_check[0] = current
+            return main_branch_changed(os.getenv('GITHUB_SHA', ''))
+
+        run_checks(
+            bot,
+            watch_seconds=watch_seconds,
+            interval_seconds=os.getenv('CHECK_INTERVAL_SECONDS', str(DEFAULT_CHECK_INTERVAL_SECONDS)),
+            stop_requested=newer_main_available if watch_seconds else None,
+        )
 
 
 if __name__ == '__main__':
