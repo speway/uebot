@@ -75,6 +75,9 @@
       "message_id": 34561,
       "status": "sent"
     },
+    "sent:tomorrow:2026-09-15": {
+      "status": "pending"
+    },
     "sent:weekly:publication:2026-09-07:0:0": {
       "message_id": 34356,
       "status": "sent"
