@@ -48,7 +48,8 @@
     "publication_style_version": 6,
     "repair:week-mask:2026-09-14": null,
     "sent:ai-disabled-rofl-command:v1": {
-      "status": "pending"
+      "message_id": 35458,
+      "status": "sent"
     },
     "sent:change:week:2026-09-14:2:ab36692a5324363ed59ebd08fdc7eac6f26d292231b0a6eadbe2bcb64c02aab7:0": {
       "message_id": 34540,
