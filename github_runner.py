@@ -51,26 +51,20 @@ def validate_relay_payload(payload):
 
 
 def fetch_snapshots():
-    """Read EduPage directly, with the authenticated Vercel route as fallback."""
+    """Read the authenticated relay first, with a direct EduPage fallback."""
     url = os.getenv('SOURCE_RELAY_URL', '')
     secret = os.getenv('WEBHOOK_SECRET', '')
     if url and url != SOURCE_RELAY:
         raise RuntimeError('Unexpected schedule relay URL')
-    direct_error = None
-    try:
-        # Frequent watchers should not spend Vercel function time when the
-        # runner can reach the public source itself.
-        return EduPage(timeout=15, attempts=1).fetch()
-    except SourceError as exc:
-        direct_error = exc
     relay_error = None
     if url and secret:
-        logging.warning('Direct EduPage read failed; trying the authenticated relay: %s',
-                        direct_error)
         request = urllib.request.Request(url, headers={'X-Schedule-Source-Secret': secret,
                                                        'User-Agent': 'P223ScheduleBot/1.0'})
         try:
-            with urllib.request.urlopen(request, timeout=60) as response:
+            # GitHub-hosted runners consistently time out on EduPage while the
+            # Vercel route normally answers in a few seconds. Use the path that
+            # actually works in production and keep direct access as redundancy.
+            with urllib.request.urlopen(request, timeout=45) as response:
                 data = response.read(2097153)
             if len(data) > 2097152:
                 raise SourceError('Schedule relay response is too large')
@@ -80,9 +74,13 @@ def fetch_snapshots():
         except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError, TypeError) as exc:
             reason = getattr(exc, 'reason', exc)
             relay_error = SourceError('Schedule relay connection: ' + type(reason).__name__)
-    if relay_error:
-        raise SourceError(str(direct_error) + '; relay: ' + str(relay_error)) from None
-    raise direct_error
+        logging.warning('Schedule relay failed; trying EduPage directly: %s', relay_error)
+    try:
+        return EduPage(timeout=15, attempts=2).fetch()
+    except SourceError as direct_error:
+        if relay_error:
+            raise SourceError(str(relay_error) + '; direct: ' + str(direct_error)) from None
+        raise
 
 
 def checked_recently(value, now=None):
@@ -120,12 +118,14 @@ def run_checks(bot, fetcher=fetch_snapshots, watch_seconds=0,
     deadline = clock() + watch_seconds
     first = True
     consecutive_source_failures = 0
+    last_source_error = None
     while first or not watching or clock() < deadline:
         first = False
         started = clock()
         try:
             check_with_confirmation(bot, fetcher, sleeper)
             consecutive_source_failures = 0
+            last_source_error = None
             logging.info('Schedule check succeeded; next poll is due within %s seconds.',
                          interval_seconds)
         except DeliveryError:
@@ -135,7 +135,8 @@ def run_checks(bot, fetcher=fetch_snapshots, watch_seconds=0,
         except SourceError as exc:
             bot.failed_check(exc)
             consecutive_source_failures += 1
-            if not watching or consecutive_source_failures >= max_source_failures:
+            last_source_error = exc
+            if not watching:
                 raise RuntimeError('Check failed: ' + str(exc)) from None
             logging.warning('Schedule source unavailable (%s/%s): %s',
                             consecutive_source_failures, max_source_failures, exc)
@@ -146,9 +147,16 @@ def run_checks(bot, fetcher=fetch_snapshots, watch_seconds=0,
             return
         remaining = deadline - clock()
         if remaining <= 0:
-            return
+            break
         elapsed = clock() - started
         sleeper(min(max(0, interval_seconds - elapsed), remaining))
+    # A temporary outage must not kill the only active watcher. Keep retrying
+    # for the whole bounded run, but still finish red when the source remained
+    # unavailable long enough and never recovered before handoff.
+    if consecutive_source_failures >= max_source_failures and last_source_error:
+        raise RuntimeError('Watcher ended with source unavailable after ' +
+                           str(consecutive_source_failures) + ' checks: ' +
+                           str(last_source_error)) from None
 
 
 def repair_stored_week_mask_bug(bot, now=None):

@@ -45,6 +45,27 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(self.bot.get('last_success'), self.now.isoformat())
         self.assertFalse(self.bot.get('source_error'))
 
+    def test_known_delivery_rejection_clears_after_successful_retry(self):
+        from unittest.mock import Mock
+
+        self.api.send = Mock(side_effect=TelegramRejected('Telegram HTTP 400'))
+        with self.assertRaises(DeliveryError):
+            self.bot.check([self.week], self.now)
+        self.assertTrue(self.bot.get('delivery_attention'))
+        self.api.send.side_effect = None
+        self.api.send.return_value = {'message_id': 77}
+        self.bot.check([self.week], self.now)
+        self.assertFalse(self.bot.get('delivery_attention'))
+
+    def test_unknown_delivery_result_remains_operator_visible(self):
+        self.api.fail = True
+        with self.assertRaises(DeliveryError):
+            self.bot.check([self.week], self.now)
+        self.api.fail = False
+        self.bot.check([self.week], self.now)
+        self.assertTrue(self.bot.get('delivery_attention'))
+        self.assertIn('нужна проверка администратором', self.bot.status_message(self.now))
+
     def test_rejected_request_can_be_retried_after_repair(self):
         from unittest.mock import Mock
         self.api.send = Mock(side_effect=TelegramRejected('Telegram HTTP 401'))
@@ -292,6 +313,22 @@ class ScheduleTests(unittest.TestCase):
         self.assertNotIn('is_persistent', keyboard)
         self.assertEqual(keyboard['keyboard'][0][0]['text'], SCHEDULE_JOKE_BUTTON_TEXT)
         self.assertEqual(self.api.send_options[-1]['reply_parameters']['message_id'], 22)
+
+    def test_private_refresh_is_denied_before_source_access(self):
+        from unittest.mock import patch
+
+        update = {'update_id': 3, 'message': {
+            'message_id': 23,
+            'chat': {'id': 999, 'type': 'private'},
+            'from': {'id': 999},
+            'text': '/refresh',
+        }}
+        with patch.dict(os.environ, {}, clear=True), \
+                patch('bot.EduPage') as source:
+            self.bot.handle(update)
+        source.assert_not_called()
+        self.assertIn('доверенные пользователи', self.api.messages[-1][1])
+        self.assertEqual(self.api.messages[-1][0], 999)
 
     def test_polling_ai_reply_targets_the_original_message(self):
         from unittest.mock import patch

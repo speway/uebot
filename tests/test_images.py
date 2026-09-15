@@ -33,6 +33,22 @@ class ImageTests(unittest.TestCase):
         im=Image.open(BytesIO(render_image(snapshot)))
         self.assertEqual(im.size,(1920,1080))
 
+    def test_dense_day_with_long_text_renders_without_overflow(self):
+        snapshot=self.snapshot();snapshot['lessons']=[]
+        starts=['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00']
+        ends=['08:50','09:50','10:50','11:50','12:50','13:50','14:50','15:50']
+        for index,(start,end) in enumerate(zip(starts,ends),1):
+            snapshot['lessons'].append({
+                'date':'2026-09-07','start':start,'end':end,
+                'subject':f'{index}. Очень длинное название университетской дисциплины для проверки плотной карточки',
+                'teachers':['Преподаватель С Очень Длинной Фамилией'],
+                'rooms':['Самая длинная аудитория корпуса'],
+                'groups':['подгруппа психологических мучеников'],
+            })
+        im=Image.open(BytesIO(render_image(snapshot)))
+        self.assertEqual(im.size,(1920,1080))
+        self.assertEqual(im.mode,'RGB')
+
     def test_consecutive_identical_pairs_are_one_visual_block(self):
         monday=[x for x in self.snapshot()['lessons'] if x['date']=='2026-09-07']
         merged=_merge_day(monday)
@@ -41,7 +57,7 @@ class ImageTests(unittest.TestCase):
                          ('09:00','12:15',2))
 
     def test_design_version_forces_existing_photos_to_refresh(self):
-        self.assertGreaterEqual(DESIGN_VERSION,6)
+        self.assertGreaterEqual(DESIGN_VERSION,7)
 
     def test_week_webhook_reuses_photo(self):
         now=dt.datetime.now(TZ);monday=now.date()-dt.timedelta(days=now.weekday())

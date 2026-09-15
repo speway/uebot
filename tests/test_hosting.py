@@ -4,16 +4,18 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 from ai_responder import reset_runtime_state
-from api.source import authorized
+from api.source import authorized, handler as source_handler
 from api.telegram import (accepts_update, fetch_state, make_reply, state_is_stale,
-                          handler, with_live_failure, with_live_snapshots)
+                          handler, runtime_event, with_live_failure, with_live_snapshots)
 from bot import (BOT_COMMANDS, REFRESH_BUTTON_TEXT, SourceError, TZ,
                  UNIVERSITY_JOKES, parse_week)
 from github_runner import (GitStateBot, KNOWN_FALSE_WEEK_DIGEST, checked_recently,
-                           check_with_confirmation, git, refresh_stored_publications, run_checks,
+                           check_with_confirmation, fetch_snapshots, git,
+                           refresh_stored_publications, run_checks,
                            repair_stored_week_mask_bug, validate_relay_payload)
 from test_bot import FakeTelegram, META
 
@@ -55,6 +57,26 @@ class HostingTests(unittest.TestCase):
         self.assertFalse(authorized('', ''))
         self.assertFalse(authorized('expected', 'different'))
 
+    def test_source_relay_retries_one_slow_edupage_read(self):
+        class Request:
+            headers = {'X-Schedule-Source-Secret': 'secret'}
+
+            def __init__(self):
+                self.response = None
+
+            def respond(self, code, data):
+                self.response = (code, data)
+
+        request = Request()
+        with patch.dict('os.environ', {'WEBHOOK_SECRET': 'secret'}, clear=True), \
+                patch('api.source.EduPage') as source:
+            source.return_value.fetch.return_value = [
+                {'week': '2026-09-14', 'lessons': []},
+            ]
+            source_handler.do_GET(request)
+        source.assert_called_once_with(timeout=10, attempts=2)
+        self.assertEqual(request.response[0], 200)
+
     def test_source_relay_payload_is_strictly_validated(self):
         valid = {'schema': 1, 'snapshots': [{'week': '2026-09-07', 'lessons': []}]}
         self.assertEqual(validate_relay_payload(valid), valid['snapshots'])
@@ -62,6 +84,59 @@ class HostingTests(unittest.TestCase):
                         {'schema': 1, 'snapshots': [{'week': 1, 'lessons': []}]}):
             with self.assertRaises(SourceError):
                 validate_relay_payload(invalid)
+
+    def test_watcher_prefers_the_fast_production_relay(self):
+        payload = json.dumps({
+            'schema': 1,
+            'snapshots': [{'week': '2026-09-14', 'lessons': []}],
+        }).encode()
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _limit):
+                return payload
+
+        environment = {
+            'SOURCE_RELAY_URL': 'https://uebot.vercel.app/api/source',
+            'WEBHOOK_SECRET': 'test-secret',
+        }
+        with patch.dict('os.environ', environment, clear=True), \
+                patch('github_runner.urllib.request.urlopen', return_value=Response()) as relay, \
+                patch('github_runner.EduPage') as direct:
+            snapshots = fetch_snapshots()
+        self.assertEqual(snapshots[0]['week'], '2026-09-14')
+        self.assertEqual(relay.call_args.kwargs['timeout'], 45)
+        direct.assert_not_called()
+
+    def test_watcher_uses_two_attempt_direct_fallback_after_relay_failure(self):
+        direct_snapshot = [{'week': '2026-09-14', 'lessons': []}]
+        environment = {
+            'SOURCE_RELAY_URL': 'https://uebot.vercel.app/api/source',
+            'WEBHOOK_SECRET': 'test-secret',
+        }
+        with patch.dict('os.environ', environment, clear=True), \
+                patch('github_runner.urllib.request.urlopen',
+                      side_effect=urllib.error.URLError('down')), \
+                patch('github_runner.EduPage') as source:
+            source.return_value.fetch.return_value = direct_snapshot
+            self.assertEqual(fetch_snapshots(), direct_snapshot)
+        source.assert_called_once_with(timeout=15, attempts=2)
+
+    def test_runtime_event_is_structured_and_contains_no_request_payload(self):
+        with patch('api.telegram.LOG.info') as info:
+            runtime_event('info', 'webhook_completed', operation='today',
+                          source='saved', status=200)
+        record = json.loads(info.call_args.args[0])
+        self.assertEqual(record['route'], '/api/telegram')
+        self.assertEqual(record['operation'], 'today')
+        self.assertEqual(record['status'], 200)
+        self.assertNotIn('text', record)
+        self.assertNotIn('user_id', record)
 
     def test_unrelated_updates_are_ignored_before_fetch(self):
         for message in ({}, {'text': 'привет'}, {'text': '/today@another_bot'},
@@ -185,16 +260,46 @@ class HostingTests(unittest.TestCase):
 
         def fetcher():
             calls.append(True)
-            if len(calls) == 1:
+            if len(calls) <= 2:
                 raise SourceError('временный сбой')
             return [{'week': '2026-09-07', 'lessons': []}]
 
         bot = WatchBot()
         run_checks(bot, fetcher, watch_seconds=181, interval_seconds=90,
-                   sleeper=sleep, clock=clock)
+                   sleeper=sleep, clock=clock, max_source_failures=1)
         self.assertEqual(len(calls), 3)
-        self.assertEqual(bot.failures, ['временный сбой'])
-        self.assertEqual(len(bot.snapshots), 2)
+        self.assertEqual(bot.failures, ['временный сбой', 'временный сбой'])
+        self.assertEqual(len(bot.snapshots), 1)
+
+    def test_watcher_reports_persistent_outage_only_after_full_watch_window(self):
+        class WatchBot:
+            def __init__(self):
+                self.failures = []
+
+            def check(self, _snapshots, _now=None):
+                raise AssertionError('persistent outage unexpectedly returned data')
+
+            def failed_check(self, exc):
+                self.failures.append(str(exc))
+
+            def _items(self, _prefix):
+                return []
+
+        current = [0.0]
+        calls = []
+
+        def fetcher():
+            calls.append(True)
+            raise SourceError('долгий сбой')
+
+        def sleep(seconds):
+            current[0] += seconds
+
+        with self.assertRaisesRegex(RuntimeError, 'Watcher ended'):
+            run_checks(WatchBot(), fetcher, watch_seconds=181, interval_seconds=90,
+                       sleeper=sleep, clock=lambda: current[0], max_source_failures=1)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(current[0], 181)
 
     def test_git_failure_prevents_telegram_send(self):
         git('remote', 'set-url', 'origin', str(self.root / 'absent.git'), cwd=self.state)
@@ -209,6 +314,36 @@ class HostingTests(unittest.TestCase):
     def test_missing_existing_state_never_resets_baseline(self):
         with self.assertRaises(RuntimeError):
             GitStateBot(self.api, -100123, str(self.root / 'missing.db'), self.state, True)
+
+    def test_new_week_is_confirmed_before_first_publication(self):
+        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())
+        current = parse_week(raw, META)
+        future = json.loads(json.dumps(current))
+        future['week'] = '2026-09-14'
+        future['source_title'] = '14–19 сентября'
+        for lesson in future['lessons']:
+            lesson['date'] = (dt.date.fromisoformat(lesson['date']) +
+                              dt.timedelta(days=7)).isoformat()
+        bot = GitStateBot(self.api, -100123, str(self.root / 'new-week.db'), self.state)
+        try:
+            bot.check([current], dt.datetime(2026, 9, 7, 7, tzinfo=TZ))
+            before = len(self.api.messages)
+            bot.check([current, future], dt.datetime(2026, 9, 7, 8, tzinfo=TZ))
+            self.assertIsNone(bot.get('week:2026-09-14'))
+            self.assertTrue(bot.get('candidate:week:2026-09-14'))
+            self.assertEqual(len(self.api.messages), before)
+            bot.check([current, future], dt.datetime(2026, 9, 7, 8, 1, tzinfo=TZ))
+            self.assertEqual(bot.get('week:2026-09-14')['lessons'], future['lessons'])
+            self.assertIsNone(bot.get('candidate:week:2026-09-14'))
+            self.assertGreater(len(self.api.messages), before)
+        finally:
+            bot.db.close()
+
+    def test_docker_runtime_contains_every_imported_bot_module(self):
+        dockerfile = (Path(__file__).parent.parent / 'Dockerfile').read_text()
+        self.assertIn('pip install --no-cache-dir -r /app/requirements.txt', dockerfile)
+        for module in ('bot.py', 'bot_copy.py', 'ai_responder.py', 'schedule_image.py'):
+            self.assertIn(module, dockerfile)
 
     def test_persisted_false_next_week_is_repaired_without_source_access(self):
         from unittest.mock import Mock
@@ -331,9 +466,10 @@ class HostingTests(unittest.TestCase):
 
         class LiveSource:
             calls = 0
+            options = None
 
-            def __init__(self, **_options):
-                pass
+            def __init__(self, **options):
+                type(self).options = options
 
             def fetch(self):
                 type(self).calls += 1
@@ -350,8 +486,47 @@ class HostingTests(unittest.TestCase):
                 patch('api.telegram.EduPage', LiveSource):
             handler.do_POST(request)
         self.assertEqual(LiveSource.calls, 1)
+        self.assertEqual(LiveSource.options, {'timeout': 8, 'attempts': 2})
         self.assertEqual(request.response[0], 200)
         self.assertIn('изменений нет', request.response[1]['text'])
+
+    def test_untrusted_private_refresh_never_reads_state_or_edupage(self):
+        update = {'update_id': 4051, 'message': {
+            'message_id': 4050,
+            'chat': {'id': 42, 'type': 'private'},
+            'from': {'id': 42},
+            'text': '/refresh',
+        }}
+        payload = json.dumps(update).encode()
+
+        class Request:
+            headers = {
+                'X-Telegram-Bot-Api-Secret-Token': 'secret',
+                'Content-Length': str(len(payload)),
+            }
+            rfile = BytesIO(payload)
+
+            def __init__(self):
+                self.response = None
+
+            def respond(self, code, data):
+                self.response = (code, data)
+
+        request = Request()
+        environment = {
+            'WEBHOOK_SECRET': 'secret',
+            'TELEGRAM_CHAT_ID': '-100123',
+            'STATE_URL': 'https://raw.githubusercontent.com/speway/uebot/state/schedule.json',
+        }
+        with patch.dict('os.environ', environment, clear=True), \
+                patch('api.telegram.fetch_state', side_effect=AssertionError('state fetched')) as state_fetch, \
+                patch('api.telegram.EduPage', side_effect=AssertionError('EduPage called')) as source:
+            handler.do_POST(request)
+        state_fetch.assert_not_called()
+        source.assert_not_called()
+        self.assertEqual(request.response[0], 200)
+        self.assertIn('доверенные пользователи', request.response[1]['text'])
+        self.assertEqual(request.response[1]['reply_parameters']['message_id'], 4050)
 
     def test_joke_button_bypasses_snapshot_and_edupage_network_calls(self):
         update = {'update_id': 406, 'message': {

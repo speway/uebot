@@ -37,7 +37,9 @@ class handler(BaseHTTPRequestHandler):
         try:
             # Fail fast enough for GitHub to use its direct fallback instead of
             # spending the whole serverless execution window on a blocked socket.
-            snapshots = EduPage(timeout=12, attempts=1).fetch()
+            # One extra attempt fits inside the 60-second function budget and
+            # prevents a single slow EduPage socket from taking down the relay.
+            snapshots = EduPage(timeout=10, attempts=2).fetch()
             self.respond(200, {'schema': 1, 'fetched_at': dt.datetime.now(TZ).isoformat(),
                                'snapshots': snapshots})
         except SourceError as exc:

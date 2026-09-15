@@ -7,7 +7,7 @@ import re
 from PIL import Image, ImageDraw, ImageFont
 
 
-DESIGN_VERSION = 6
+DESIGN_VERSION = 7
 WIDTH = 1920
 HEIGHT = 1080
 MARGIN = 48
@@ -220,7 +220,13 @@ def render_image(snapshot):
 
             available = bottom - header_bottom - 12
             block_height = available / len(blocks)
-            if len(blocks) <= 1:
+            dense = block_height < 60
+            if dense:
+                # Six or more distinct lessons cannot honestly fit title,
+                # teacher and room on separate lines. Preserve the essentials
+                # on one clean row instead of drawing text over itself.
+                subject_size, detail_size, time_size = 16, 15, 15
+            elif len(blocks) <= 1:
                 subject_size, detail_size, time_size = 28, 19, 22
             elif len(blocks) == 2:
                 subject_size, detail_size, time_size = 24, 18, 20
@@ -235,7 +241,7 @@ def render_image(snapshot):
             # Keep a real gutter after the widest HH:MM–HH:MM label.  The old
             # portrait coordinates looked acceptable in tests but overlapped as
             # soon as the cards became columns in the landscape grid.
-            time_width = 174 if card_width >= 560 else 116
+            time_width = 116 if dense or card_width < 560 else 174
             text_left = left + 28 + time_width
             text_width = right - 24 - text_left
             for block_index, item in enumerate(blocks):
@@ -244,30 +250,32 @@ def render_image(snapshot):
                 if block_index:
                     draw.line((left + 28, round(block_top), right - 22, round(block_top)),
                               fill=COLORS['line'], width=2)
-                draw.text((left + 28, block_top + 11), f"{item['start']}–{item['end']}",
+                line_y = block_top + max(5, (block_height - subject_size) / 2 - 3) if dense else block_top + 11
+                draw.text((left + 28, line_y), f"{item['start']}–{item['end']}",
                           font=time_font, fill=COLORS['ink'])
                 title, kind = _subject_parts(item['subject'])
                 pair_label = ''
                 if item['_pairs'] > 1:
                     pair_label = f"{item['_pairs']} ПАРЫ" if item['_pairs'] in (2, 3, 4) else f"{item['_pairs']} ПАР"
                 meta = ' · '.join(filter(None, (kind, pair_label)))
-                if meta:
+                if meta and not dense:
                     draw.text((left + 28, block_top + 39),
                               _ellipsize(draw, meta, bold[15], time_width - 10),
                               font=bold[15], fill=accent)
                 max_title_lines = 2 if block_height >= 84 else 1
                 title_lines = _limited_lines(draw, title, subject_font, text_width, max_title_lines)
-                title_y = block_top + 8
+                title_y = line_y if dense else block_top + 8
                 for line in title_lines:
                     draw.text((text_left, title_y), line, font=subject_font, fill=COLORS['ink'])
                     title_y += subject_line_height
-                teachers = ' / '.join(item.get('teachers', [])) or 'Преподаватель не указан'
-                rooms = ', '.join(item.get('rooms', [])) or 'не указана'
-                groups = ', '.join(item.get('groups', []))
-                details = teachers + '  ·  ауд. ' + rooms + (('  ·  ' + groups) if groups else '')
-                detail_y = min(title_y + 2, block_bottom - detail_size - 9)
-                draw.text((text_left, detail_y), _ellipsize(draw, details, detail_font, text_width),
-                          font=detail_font, fill=COLORS['muted'])
+                if not dense:
+                    teachers = ' / '.join(item.get('teachers', [])) or 'Преподаватель не указан'
+                    rooms = ', '.join(item.get('rooms', [])) or 'не указана'
+                    groups = ', '.join(item.get('groups', []))
+                    details = teachers + '  ·  ауд. ' + rooms + (('  ·  ' + groups) if groups else '')
+                    detail_y = min(title_y + 2, block_bottom - detail_size - 9)
+                    draw.text((text_left, detail_y), _ellipsize(draw, details, detail_font, text_width),
+                              font=detail_font, fill=COLORS['muted'])
 
     footer_y = 952
     draw.line((MARGIN, footer_y - 14, WIDTH - MARGIN, footer_y - 14), fill=COLORS['line'], width=2)

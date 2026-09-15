@@ -32,6 +32,12 @@ INTRO = ('Я читаю EduPage за П2‑23, потому что вы, ебу�
          'между выбором группы и кнопкой «следующая неделя».')
 NO_SCHEDULE_ROAST = ('Расписания ещё нет. Так что сидите дальше в неведении, ебучие лохи. '
                      'Как только деканат родит таблицу, я первым испорчу вам настроение.')
+PRIVATE_REFRESH_DENIED = (
+    '<b>П2‑23 · Ручная проверка</b>\n\n'
+    'В личке принудительно дёргать EduPage могут только доверенные пользователи. '
+    'Проверяй в общей группе или попроси владельца добавить твой ID.\n\n'
+    '<i>Чужой сервер — не кнопка лифта, ебучий испытатель нагрузки.</i>'
+)
 ROASTS = {
     'unpublished': (
         NO_SCHEDULE_ROAST,
@@ -821,6 +827,19 @@ class Bot:
         with self.lock, self.db:
             self.db.execute('INSERT OR REPLACE INTO kv VALUES (?,?)', (key, json.dumps(value, ensure_ascii=False)))
 
+    def delivery_needs_attention(self):
+        """Keep unknown sends sticky while allowing known, repaired failures to clear."""
+        for _key, value in self._items('sent:'):
+            if isinstance(value, dict) and value.get('status') == 'pending':
+                return True
+        for key, value in self._items('image-send:'):
+            if not value:
+                continue
+            parts = key.split(':', 2)
+            if len(parts) > 1 and not self.get('image:' + parts[1]):
+                return True
+        return False
+
     def send_once(self, key, text, chat_id=None, **send_options):
         prior = self.get('sent:' + key)
         if prior:
@@ -940,6 +959,7 @@ class Bot:
     def check(self, snapshots=None, now=None):
         now = now or dt.datetime.now(TZ)
         snapshots = snapshots if snapshots is not None else EduPage().fetch(now.date())
+        has_confirmed_week = bool(self._items('week:'))
         ready = []
         for snapshot in snapshots:
             key = 'week:' + snapshot['week']
@@ -948,12 +968,16 @@ class Bot:
             fingerprint = digest(lessons)
             changed = old is not None and digest(old['lessons']) != fingerprint
             snapshot = dict(snapshot, revision=(old or {}).get('revision', 0) + int(changed))
-            if changed:
+            # Once a baseline exists, an entirely new week is still a data
+            # change. Confirm it just like an edit so a transient/corrupt source
+            # response cannot instantly create a false future timetable.
+            if changed or (old is None and has_confirmed_week):
                 candidate = self.get('candidate:' + key)
                 if candidate != fingerprint:
                     self.put('candidate:' + key, fingerprint)
                     continue  # Require the same change in two independent successful checks.
-                messages = describe_changes(old['lessons'], lessons, now.date().isoformat())
+                messages = (describe_changes(old['lessons'], lessons, now.date().isoformat())
+                            if old is not None else [])
                 outbox = self.get('outbox:' + key, [])
                 outbox.extend({'key': f'change:{key}:{snapshot["revision"]}:{fingerprint}:{i}', 'text': message}
                               for i, message in enumerate(messages))
@@ -979,6 +1003,7 @@ class Bot:
         if errors:
             self.put('delivery_attention', True)
             raise DeliveryError('Publication failed: ' + type(errors[0]).__name__) from None
+        self.put('delivery_attention', self.delivery_needs_attention())
         self.daily_digest(now)
 
     def day_messages(self, date, now=None):
@@ -1253,7 +1278,7 @@ class Bot:
         else:
             checked_text = 'ещё не было'
         source_problem = bool(self.last_error or self.get('source_error'))
-        delivery_problem = bool(self.get('delivery_attention'))
+        delivery_problem = bool(self.get('delivery_attention') or self.delivery_needs_attention())
         pending = any(value for key, value in self._items('candidate:') if value)
         monday = now.date() - dt.timedelta(days=now.date().weekday())
 
@@ -1293,7 +1318,8 @@ class Bot:
         return [(key, json.loads(value)) for key, value in rows]
 
     def handle(self, update, runtime_oidc_token=None):
-        from ai_responder import BOT_USERNAME, is_ai_request, reply_to_update
+        from ai_responder import (BOT_USERNAME, is_ai_request, private_ai_allowed,
+                                  reply_to_update)
 
         message = update.get('message', {})
         destination = int(message.get('chat', {}).get('id', 0))
@@ -1339,6 +1365,11 @@ class Bot:
         if address and address != username.lower():
             return
         sender = message.get('from', {}).get('id', 0)
+        private_refresh_allowed = (
+            not private or
+            (self.owner_id and str(sender) == str(self.owner_id)) or
+            private_ai_allowed(update)
+        )
         # The one-shot joke must always close its keyboard, even when somebody
         # opens /help and presses it within the ordinary five-second cooldown.
         if not joke_button:
@@ -1348,7 +1379,9 @@ class Bot:
             self.put('rate:' + str(sender), time.time())
         now = dt.datetime.now(TZ)
         today = now.date()
-        if joke_button:
+        if command == '/refresh' and not private_refresh_allowed:
+            messages = [PRIVATE_REFRESH_DENIED]
+        elif joke_button:
             messages = [self.university_joke_message(
                 f'{update.get("update_id", 0)}:{sender}')]
         elif command in ('/today', '/tomorrow'):

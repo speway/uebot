@@ -3,6 +3,7 @@ import datetime as dt
 import hmac
 from http.server import BaseHTTPRequestHandler
 import json
+import logging
 import os
 import time
 import urllib.request
@@ -10,13 +11,24 @@ import urllib.request
 from ai_responder import (BOT_USERNAME, extract_question, is_ai_request,
                           private_ai_allowed, provider_ready)
 from bot import (BOT_COMMAND_NAMES, SCHEDULE_JOKE_COMMAND, SCHEDULE_READ_COMMANDS,
-                 Bot, EduPage, TZ, digest, is_schedule_joke_button,
+                 PRIVATE_REFRESH_DENIED, Bot, EduPage, TZ, digest, is_schedule_joke_button,
                  parse_bot_command, week_caption)
 
 
 STALE_AFTER = dt.timedelta(minutes=30)
 STALE_WARNING = ('Автопроверка задержалась. Показываю сохранённое — перед выходом сверься с EduPage, '
                  'а то коллективно припрутся не туда только особо одарённые.')
+LOG = logging.getLogger('schedule.telegram')
+LOG.setLevel(logging.INFO)
+
+
+def runtime_event(level, event, started=None, **fields):
+    """Write bounded structured telemetry without user text, IDs, or headers."""
+    record = {'event': event, 'route': '/api/telegram'}
+    if started is not None:
+        record['duration_ms'] = round((time.monotonic() - started) * 1000)
+    record.update({key: value for key, value in fields.items() if value is not None})
+    getattr(LOG, level)(json.dumps(record, ensure_ascii=False, sort_keys=True))
 
 
 def accepts_update(update, chat_id):
@@ -197,9 +209,12 @@ class handler(BaseHTTPRequestHandler):
         supplied = self.headers.get('X-Telegram-Bot-Api-Secret-Token', '')
         if not secret or not hmac.compare_digest(secret, supplied):
             return self.respond(403, {'ok': False})
+        started = time.monotonic()
+        operation = 'unknown'
         try:
             size = int(self.headers.get('Content-Length', '0'))
             if not 0 < size <= 262144:
+                runtime_event('warning', 'webhook_rejected', started, reason='payload_size')
                 return self.respond(413, {'ok': False})
             update = json.loads(self.rfile.read(size))
             chat_id = int(os.environ['TELEGRAM_CHAT_ID'])
@@ -211,27 +226,58 @@ class handler(BaseHTTPRequestHandler):
             joke_button = command == SCHEDULE_JOKE_COMMAND
             manual_refresh = command == '/refresh'
             ai_request = is_ai_request(update, chat_id, BOT_USERNAME)
+            private = update['message'].get('chat', {}).get('type') == 'private'
+            live_source_allowed = not private or private_ai_allowed(update)
+            operation = 'ai' if ai_request else command.lstrip('/') or 'unknown'
             if command in ('/start', '/help'):
                 reply = make_reply(update, {'kv': {}}, chat_id, runtime_oidc_token)
+                runtime_event('info', 'webhook_completed', started, operation=operation,
+                              source='not_needed', status=200)
                 return self.respond(200, reply)
             # This is intentionally a local easter egg, not a disguised source
             # request. It must stay instant and work even when GitHub/EduPage is down.
             if joke_button:
-                return self.respond(200, make_reply(
-                    update, {'schema': 1, 'kv': {}}, chat_id, runtime_oidc_token))
+                reply = make_reply(update, {'schema': 1, 'kv': {}}, chat_id,
+                                   runtime_oidc_token)
+                runtime_event('info', 'webhook_completed', started, operation=operation,
+                              source='not_needed', status=200)
+                return self.respond(200, reply)
+            if manual_refresh and not live_source_allowed:
+                response = {
+                    'method': 'sendMessage',
+                    'chat_id': update['message']['chat']['id'],
+                    'text': PRIVATE_REFRESH_DENIED,
+                    'parse_mode': 'HTML',
+                    'link_preview_options': {'is_disabled': True},
+                }
+                if update['message'].get('message_id'):
+                    response['reply_parameters'] = {
+                        'message_id': update['message']['message_id'],
+                        'allow_sending_without_reply': True,
+                    }
+                runtime_event('info', 'webhook_completed', started, operation=operation,
+                              source='denied', status=200)
+                return self.respond(200, response)
             # Private AI access is allowlisted. Reject it before any source or
             # provider call so a random DM cannot spend the group's budget.
             if ai_request and not private_ai_allowed(update):
-                return self.respond(200, make_reply(update, {'kv': {}}, chat_id,
-                                                    runtime_oidc_token))
+                reply = make_reply(update, {'kv': {}}, chat_id, runtime_oidc_token)
+                runtime_event('info', 'webhook_completed', started, operation=operation,
+                              source='denied', status=200)
+                return self.respond(200, reply)
             # A missing /ask body needs no schedule fetch and no paid request.
             if ai_request and not extract_question(update, BOT_USERNAME)[0]:
-                return self.respond(200, make_reply(update, {'kv': {}}, chat_id,
-                                                    runtime_oidc_token))
+                reply = make_reply(update, {'kv': {}}, chat_id, runtime_oidc_token)
+                runtime_event('info', 'webhook_completed', started, operation=operation,
+                              source='not_needed', status=200)
+                return self.respond(200, reply)
             state_available = True
+            source_mode = 'saved'
             try:
                 state = fetch_state(os.environ['STATE_URL'])
-            except Exception:
+            except Exception as exc:
+                runtime_event('warning', 'snapshot_read_failed', started,
+                              operation=operation, error_type=type(exc).__name__)
                 if not ai_request and not manual_refresh:
                     raise
                 # General questions must not die merely because the timetable
@@ -242,19 +288,30 @@ class handler(BaseHTTPRequestHandler):
             if manual_refresh:
                 try:
                     state = with_live_snapshots(
-                        state, EduPage(timeout=8, attempts=1).fetch(), comparable=state_available)
-                except Exception:
+                        state, EduPage(timeout=8, attempts=2).fetch(), comparable=state_available)
+                    source_mode = 'live'
+                except Exception as exc:
+                    runtime_event('warning', 'live_schedule_failed', started,
+                                  operation=operation, error_type=type(exc).__name__)
                     state = with_live_failure(state)
+                    source_mode = 'saved_after_live_failure'
             elif ((command in SCHEDULE_READ_COMMANDS or ai_request) and state_is_stale(state)
-                  and state_available):
+                  and state_available and live_source_allowed):
                 try:
                     # Keep Telegram's webhook comfortably below its timeout. If the
                     # live read fails, make_reply transparently uses saved data.
                     timeout = 4 if ai_request else 8
                     state = with_live_snapshots(state, EduPage(timeout=timeout, attempts=1).fetch())
-                except Exception:
-                    pass
+                    source_mode = 'live'
+                except Exception as exc:
+                    runtime_event('warning', 'live_schedule_failed', started,
+                                  operation=operation, error_type=type(exc).__name__)
+                    source_mode = 'saved_after_live_failure'
+            runtime_event('info', 'webhook_completed', started, operation=operation,
+                          source=source_mode, status=200)
             self.respond(200, make_reply(update, state, chat_id, runtime_oidc_token))
-        except Exception:
+        except Exception as exc:
+            runtime_event('error', 'webhook_failed', started, operation=operation,
+                          error_type=type(exc).__name__, status=503)
             # No message was sent. A failed webhook can be retried safely by Telegram.
             self.respond(503, {'ok': False})
