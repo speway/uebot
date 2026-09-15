@@ -7,7 +7,6 @@ import unittest
 import urllib.error
 from unittest.mock import patch
 
-from ai_responder import reset_runtime_state
 from api.source import authorized, handler as source_handler
 from api.telegram import (accepts_update, fetch_state, make_reply, state_is_stale,
                           handler, runtime_event, with_live_failure, with_live_snapshots)
@@ -21,6 +20,22 @@ from test_bot import FakeTelegram, META
 
 
 class HostingTests(unittest.TestCase):
+    def test_webhook_health_reports_ai_disabled(self):
+        class Request:
+            def __init__(self):
+                self.response = None
+
+            def respond(self, code, data):
+                self.response = (code, data)
+
+        request = Request()
+        handler.do_GET(request)
+        self.assertEqual(request.response, (200, {
+            'service': 'p223-schedule-bot',
+            'mode': 'webhook',
+            'ai': 'disabled',
+        }))
+
     def test_public_snapshot_loader_validates_schema_and_size(self):
         class Response:
             def __init__(self, payload):
@@ -342,8 +357,9 @@ class HostingTests(unittest.TestCase):
     def test_docker_runtime_contains_every_imported_bot_module(self):
         dockerfile = (Path(__file__).parent.parent / 'Dockerfile').read_text()
         self.assertIn('pip install --no-cache-dir -r /app/requirements.txt', dockerfile)
-        for module in ('bot.py', 'bot_copy.py', 'ai_responder.py', 'schedule_image.py'):
+        for module in ('bot.py', 'bot_copy.py', 'schedule_image.py'):
             self.assertIn(module, dockerfile)
+        self.assertNotIn('ai_responder.py', dockerfile)
 
     def test_persisted_false_next_week_is_repaired_without_source_access(self):
         from unittest.mock import Mock
@@ -396,9 +412,11 @@ class HostingTests(unittest.TestCase):
                                                         'from': {'id': 42}, 'text': '/help'}}, {'kv': {}}, -100123)
         self.assertIn('читаю EduPage за П2‑23', result['text'])
         self.assertNotIn('Автопроверка задержалась', result['text'])
-        self.assertTrue(result['reply_markup']['one_time_keyboard'])
+        self.assertTrue(result['reply_markup']['remove_keyboard'])
         self.assertTrue(result['reply_markup']['selective'])
-        self.assertNotIn('is_persistent', result['reply_markup'])
+        self.assertNotIn('keyboard', result['reply_markup'])
+        self.assertIn('/rofl', result['text'])
+        self.assertNotIn('/ask', result['text'])
         self.assertEqual(result['reply_parameters']['message_id'], 9)
         self.assertEqual(result['chat_id'], -100123)
 
@@ -528,12 +546,12 @@ class HostingTests(unittest.TestCase):
         self.assertIn('доверенные пользователи', request.response[1]['text'])
         self.assertEqual(request.response[1]['reply_parameters']['message_id'], 4050)
 
-    def test_joke_button_bypasses_snapshot_and_edupage_network_calls(self):
+    def test_rofl_command_bypasses_snapshot_and_edupage_network_calls(self):
         update = {'update_id': 406, 'message': {
             'message_id': 405,
             'chat': {'id': -100123, 'type': 'supergroup'},
             'from': {'id': 42},
-            'text': REFRESH_BUTTON_TEXT,
+            'text': '/rofl',
         }}
         payload = json.dumps(update).encode()
 
@@ -566,7 +584,7 @@ class HostingTests(unittest.TestCase):
         self.assertTrue(any(joke in request.response[1]['text'] for joke in UNIVERSITY_JOKES))
         self.assertTrue(request.response[1]['reply_markup']['remove_keyboard'])
 
-    def test_group_ai_mentions_and_replies_are_accepted_but_chatter_is_not(self):
+    def test_ai_mentions_replies_and_ask_are_not_accepted(self):
         base = {'chat': {'id': -100123, 'type': 'supergroup'},
                 'from': {'id': 42, 'is_bot': False}}
         mention = dict(base, text='@msutf_p223_schedule_bot ответь нормально')
@@ -574,12 +592,13 @@ class HostingTests(unittest.TestCase):
             'from': {'id': 999, 'is_bot': True, 'username': 'msutf_p223_schedule_bot'},
             'text': 'ответ бота',
         })
-        self.assertTrue(accepts_update({'message': mention}, -100123))
-        self.assertTrue(accepts_update({'message': reply}, -100123))
+        ask = dict(base, text='/ask почему небо синее?')
+        self.assertFalse(accepts_update({'message': mention}, -100123))
+        self.assertFalse(accepts_update({'message': reply}, -100123))
+        self.assertFalse(accepts_update({'message': ask}, -100123))
         self.assertFalse(accepts_update({'message': dict(base, text='обычный трёп')}, -100123))
 
-    def test_ai_reply_targets_the_question_and_never_adds_schedule_stale_copy(self):
-        reset_runtime_state()
+    def test_ai_request_never_reaches_provider(self):
         request = {'update_id': 701, 'message': {
             'message_id': 88,
             'chat': {'id': -100123, 'type': 'supergroup'},
@@ -587,14 +606,10 @@ class HostingTests(unittest.TestCase):
             'text': '/ask почему небо синее?',
         }}
         with patch.dict('os.environ', {}, clear=True), \
-                patch('ai_responder.generate_answer',
-                      return_value='Из-за рассеяния света.') as generate:
+                patch('ai_responder.generate_answer') as generate:
             result = make_reply(request, {'kv': {}}, -100123, 'runtime-oidc-token')
-        self.assertEqual(result['reply_parameters']['message_id'], 88)
-        self.assertTrue(result['reply_parameters']['allow_sending_without_reply'])
-        self.assertIn('Из-за рассеяния света.', result['text'])
-        self.assertNotIn('Автопроверка задержалась', result['text'])
-        self.assertEqual(generate.call_args.kwargs['runtime_oidc_token'], 'runtime-oidc-token')
+        generate.assert_not_called()
+        self.assertEqual(result, {'ok': True})
 
     def test_stale_state_can_be_overlaid_with_live_schedule(self):
         old = {'schema': 1, 'kv': {'last_success': '2026-09-10T00:00:00+05:00',

@@ -26,6 +26,7 @@ from bot_copy import UNIVERSITY_JOKES
 
 SOURCE = 'https://msu2006.edupage.org'
 GROUP = 'П2-23'
+BOT_USERNAME = 'msutf_p223_schedule_bot'
 TZ = ZoneInfo('Asia/Tashkent')
 DAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
 INTRO = ('Я читаю EduPage за П2‑23, потому что вы, ебучие гении, сами потеряетесь '
@@ -122,19 +123,19 @@ SCHEDULE_JOKE_BUTTON_TEXT = '🔄 Проверить расписание'
 # Keep the old public name for deployments or integrations importing it. The
 # button is deliberately no longer a refresh action; /refresh is the only one.
 REFRESH_BUTTON_TEXT = SCHEDULE_JOKE_BUTTON_TEXT
-SCHEDULE_JOKE_COMMAND = '/schedule-joke'
-BOT_CONFIG_VERSION = 7
+SCHEDULE_JOKE_COMMAND = '/rofl'
+BOT_CONFIG_VERSION = 8
 BOT_COMMANDS = [
     {'command': 'today', 'description': 'Какой сегодня учебный пиздец'},
     {'command': 'tomorrow', 'description': 'Чем испортят завтрашний день'},
     {'command': 'next', 'description': 'Куда тащиться следующим'},
-    {'command': 'ask', 'description': 'Спроси что угодно, если думать лень'},
     {'command': 'when', 'description': 'Сколько до начала или конца пары'},
     {'command': 'free', 'description': 'Когда ближайший свободный день'},
     {'command': 'rooms', 'description': 'Аудитории на сегодня без квеста'},
     {'command': 'week', 'description': 'Вся неделя одним страданием'},
     {'command': 'nextweek', 'description': 'Будущее, если его опубликовали'},
     {'command': 'refresh', 'description': 'Перечитать EduPage прямо сейчас'},
+    {'command': 'rofl', 'description': 'Случайный университетский рофл'},
     {'command': 'roast', 'description': 'Вердикт по сегодняшнему пиздецу'},
     {'command': 'status', 'description': 'Кто опять обосрался'},
     {'command': 'help', 'description': 'Инструкция для самых потерянных'},
@@ -163,14 +164,8 @@ def parse_bot_command(text):
 
 
 def schedule_joke_keyboard():
-    """Expose the gag once from /help instead of occupying the input forever."""
-    return {
-        'keyboard': [[{'text': SCHEDULE_JOKE_BUTTON_TEXT}]],
-        'resize_keyboard': True,
-        'one_time_keyboard': True,
-        'selective': True,
-        'input_field_placeholder': 'Нажми, если доверчивый',
-    }
+    """Legacy helper: clear cached keyboards; the reliable entry point is /rofl."""
+    return {'remove_keyboard': True, 'selective': True}
 
 
 def remove_reply_keyboard(selective=False):
@@ -181,17 +176,31 @@ def remove_reply_keyboard(selective=False):
 
 
 def reply_keyboard_for(command):
-    """Keep the gag discoverable in help and absent everywhere else."""
-    if command in ('/start', '/help'):
-        return schedule_joke_keyboard()
-    if command == SCHEDULE_JOKE_COMMAND:
+    """Retire the unreliable reply button and clear any cached copy of it."""
+    if command in ('/start', '/help', SCHEDULE_JOKE_COMMAND):
         return remove_reply_keyboard(selective=True)
     return None
 
 
 def refresh_keyboard():
-    """Backward-compatible name for the now one-time joke keyboard."""
+    """Backward-compatible helper that now removes the retired keyboard."""
     return schedule_joke_keyboard()
+
+
+def trusted_private_user(update, owner_id=0):
+    """Allow private live reads only for explicit user IDs, never for everyone."""
+    sender = str((update.get('message', {}).get('from') or {}).get('id', ''))
+    if not sender:
+        return False
+    if owner_id and sender == str(owner_id):
+        return True
+    raw = ','.join(filter(None, (
+        os.getenv('PRIVATE_USER_IDS', ''),
+        # Keep the old allowlist working while AI itself stays disabled.
+        os.getenv('AI_PRIVATE_USER_IDS', ''),
+        os.getenv('OWNER_ID', ''),
+    )))
+    return sender in {item.strip() for item in raw.split(',') if item.strip()}
 
 
 class SourceError(Exception):
@@ -868,16 +877,16 @@ class Bot:
         self.tg.call('setMyCommands', commands=BOT_COMMANDS)
         self.tg.call('setMyDescription', description=(
             'Расписание П2‑23 без ебучего квеста по EduPage: пары, аудитории, окна, свободные дни, '
-            'обратный отсчёт, изменения и AI-ответы. Подкалывает, потому что кто-то же должен вас воспитывать.'))
+            'обратный отсчёт, изменения и рофлы. Подкалывает, потому что кто-то же должен вас воспитывать.'))
         self.tg.call('setMyShortDescription', short_description=(
-            'Пары и AI для П2‑23. Ищу всё, кроме оправданий вашему опозданию.'))
+            'Пары и рофлы для П2‑23. Ищу всё, кроме оправданий вашему опозданию.'))
         self.send_once(
-            'schedule-joke-button:v1',
-            '<b>П2‑23 · Кнопку выселил</b>\n\n'
-            'Постоянную <b>🔄 Проверить расписание</b> убрал: '
-            'слишком часто вы тыкали её талантливыми жопами.\n\n'
-            'Теперь она появляется только после /help и выдаёт '
-            'университетский диагноз. <b>Настоящая проверка — /refresh.</b>',
+            'ai-disabled-rofl-command:v1',
+            '<b>П2‑23 · Перестановка в цирке</b>\n\n'
+            'AI-ответы выключил: больше никакой платной говорящей головы.\n\n'
+            'Рофл теперь вызывается надёжной командой <b>/rofl</b>. '
+            'Настоящая проверка расписания — <b>/refresh</b>. '
+            'Сломанную кнопку убрал, пусть покоится с миром и вашим терпением.',
             reply_markup=remove_reply_keyboard(),
         )
         self.put('bot_config_version', BOT_CONFIG_VERSION)
@@ -1256,14 +1265,12 @@ class Bot:
 
     def university_joke_message(self, seed=''):
         joke = university_joke(seed)
-        return (f'<b>П2‑23 · Проверка завершена</b>\n\n'
+        return (f'<b>П2‑23 · Рофл вызван</b>\n\n'
                 f'{html.escape(joke)}\n\n'
-                '<i>Это была кнопка-лохотрон. Настоящая проверка — /refresh. '
-                'Клавиатуру убрал, пока вы не затыкали её до дыр.</i>')
+                '<i>/rofl — бесполезно, но хотя бы честно. '
+                'Настоящая проверка расписания — /refresh.</i>')
 
     def status_message(self, now=None, runtime_oidc_token=None):
-        from ai_responder import provider_ready
-
         now = now or dt.datetime.now(TZ)
         success = self.get('last_success')
         checked = None
@@ -1299,8 +1306,7 @@ class Bot:
             'Доставка: ' + ('нужна проверка администратором' if delivery_problem else 'без ошибок'),
             'Эта неделя: ' + week_status(monday),
             'Следующая неделя: ' + week_status(monday + dt.timedelta(days=7)),
-            'AI-канал: ' + ('подключён' if provider_ready(runtime_oidc_token)
-                            else 'ждёт настройки'),
+            'AI-ответы: выключены',
             'Автопроверка: примерно каждые 90 секунд',
         ]
         if source_problem:
@@ -1318,9 +1324,6 @@ class Bot:
         return [(key, json.loads(value)) for key, value in rows]
 
     def handle(self, update, runtime_oidc_token=None):
-        from ai_responder import (BOT_USERNAME, is_ai_request, private_ai_allowed,
-                                  reply_to_update)
-
         message = update.get('message', {})
         destination = int(message.get('chat', {}).get('id', 0))
         private = message.get('chat', {}).get('type') == 'private'
@@ -1328,51 +1331,17 @@ class Bot:
             return
         text = message.get('text', '').strip()
         username = self.username or BOT_USERNAME
-        ai_request = is_ai_request(update, self.chat_id, username)
         command, address = parse_bot_command(text)
-        joke_button = command == SCHEDULE_JOKE_COMMAND
-        if not text.startswith('/') and not ai_request and not joke_button:
-            return
-        if ai_request:
-            reply_key = 'reply:' + str(update.get('update_id', 0)) + ':0'
-            if self.get('sent:' + reply_key):
-                return
-            now = dt.datetime.now(TZ)
-            monday = now.date() - dt.timedelta(days=now.date().weekday())
-            state = {'schema': 1, 'kv': {
-                'last_success': self.get('last_success'),
-                'source_error': self.get('source_error'),
-            }}
-            for offset in (0, 7):
-                start = monday + dt.timedelta(days=offset)
-                snapshot = self.get('week:' + start.isoformat())
-                if snapshot is not None:
-                    state['kv']['week:' + start.isoformat()] = snapshot
-            response = reply_to_update(update, state, self.chat_id, username, now,
-                                       runtime_oidc_token)
-            if response:
-                reply_parameters = None
-                if message.get('message_id'):
-                    reply_parameters = {
-                        'message_id': message['message_id'],
-                        'allow_sending_without_reply': True,
-                    }
-                options = {}
-                if reply_parameters:
-                    options['reply_parameters'] = reply_parameters
-                self.send_once(reply_key, response, destination, **options)
+        joke_request = command == SCHEDULE_JOKE_COMMAND
+        if not text.startswith('/') and not joke_request:
             return
         if address and address != username.lower():
             return
         sender = message.get('from', {}).get('id', 0)
-        private_refresh_allowed = (
-            not private or
-            (self.owner_id and str(sender) == str(self.owner_id)) or
-            private_ai_allowed(update)
-        )
-        # The one-shot joke must always close its keyboard, even when somebody
-        # opens /help and presses it within the ordinary five-second cooldown.
-        if not joke_button:
+        private_refresh_allowed = not private or trusted_private_user(update, self.owner_id)
+        # /rofl must work immediately after /help; ordinary commands keep the
+        # small anti-spam cooldown.
+        if not joke_request:
             last = self.get('rate:' + str(sender), 0)
             if time.time() - last < 5:
                 return
@@ -1381,7 +1350,7 @@ class Bot:
         today = now.date()
         if command == '/refresh' and not private_refresh_allowed:
             messages = [PRIVATE_REFRESH_DENIED]
-        elif joke_button:
+        elif joke_request:
             messages = [self.university_joke_message(
                 f'{update.get("update_id", 0)}:{sender}')]
         elif command in ('/today', '/tomorrow'):
@@ -1409,19 +1378,17 @@ class Bot:
                         '\n\n/today — какой сегодня учебный пиздец\n'
                         '/tomorrow — чем испортят завтрашний день\n'
                         '/next — куда тащиться следующим\n'
-                        '/ask &lt;вопрос&gt; — спросить AI о чём угодно\n'
                         '/when — сколько до начала или конца текущей пары\n'
                         '/free — ближайший свободный учебный день\n'
                         '/rooms — аудитории на сегодня без квеста\n'
-                        '/roast — диагноз сегодняшней учебной нагрузке\n'
+                        '/rofl — случайный университетский рофл\n'
+                        '/roast — диагноз сегодняшней учебной нагрузки\n'
                         '/week — вся неделя одним страданием\n'
                         '/nextweek — будущее, если деканат его высрал\n'
                         '/refresh — перечитать EduPage прямо сейчас\n'
                         '/status — кто опять обосрался\n\n'
-                        'Внизу один раз появится кнопка «Проверить расписание» — '
-                        'это академический тест на доверчивость, а не сетевой запрос.\n\n'
-                        'В группе AI отвечает только на /ask, прямое @упоминание или ответ на моё сообщение — '
-                        'в чужой трёп без приглашения не лезу.\n\n'
+                        'AI-ответы выключены. Для бессмысленного, но честного развлечения есть /rofl; '
+                        'для реальной проверки источника — /refresh.\n\n'
                         'Изменение публикую только после повторной проверки, чтобы одна галлюцинация '
                         'EduPage не погнала всю толпу долбоёбов в пустую аудиторию. Вечером напоминаю пары на завтра. '
                         f'Время Ташкента.\n<a href="{SOURCE}/timetable/">Открыть первоисточник</a>']

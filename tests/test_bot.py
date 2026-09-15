@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 from bot import (Bot, SourceError, DeliveryError, TelegramRejected, EduPage,
-                 REFRESH_BUTTON_TEXT, SCHEDULE_JOKE_BUTTON_TEXT, TZ,
+                 REFRESH_BUTTON_TEXT, TZ,
                  UNIVERSITY_JOKES,
                  IPv4HTTPSConnection, IPv4HTTPSHandler, digest, ipv4_connection,
                  parse_week, render_day_reply, render_week, situational_roast,
@@ -308,10 +308,11 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(len(self.api.messages), 1)
         self.assertEqual(self.api.messages[0][0], 999)
         keyboard = self.api.send_options[-1]['reply_markup']
-        self.assertTrue(keyboard['one_time_keyboard'])
+        self.assertTrue(keyboard['remove_keyboard'])
         self.assertTrue(keyboard['selective'])
-        self.assertNotIn('is_persistent', keyboard)
-        self.assertEqual(keyboard['keyboard'][0][0]['text'], SCHEDULE_JOKE_BUTTON_TEXT)
+        self.assertNotIn('keyboard', keyboard)
+        self.assertIn('/rofl', self.api.messages[-1][1])
+        self.assertNotIn('/ask', self.api.messages[-1][1])
         self.assertEqual(self.api.send_options[-1]['reply_parameters']['message_id'], 22)
 
     def test_private_refresh_is_denied_before_source_access(self):
@@ -330,11 +331,8 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn('доверенные пользователи', self.api.messages[-1][1])
         self.assertEqual(self.api.messages[-1][0], 999)
 
-    def test_polling_ai_reply_targets_the_original_message(self):
+    def test_polling_ai_requests_are_ignored(self):
         from unittest.mock import patch
-        from ai_responder import reset_runtime_state
-
-        reset_runtime_state()
         request = {'update_id': 71, 'message': {
             'message_id': 72,
             'chat': {'id': -100123, 'type': 'supergroup'},
@@ -342,10 +340,10 @@ class ScheduleTests(unittest.TestCase):
             'text': '/ask тест',
         }}
         with patch.dict(os.environ, {'VERCEL_OIDC_TOKEN': 'test-token'}, clear=True), \
-                patch('ai_responder.generate_answer', return_value='Работает.'):
+                patch('ai_responder.generate_answer') as generate:
             self.bot.handle(request)
-        self.assertIn('Работает.', self.api.messages[-1][1])
-        self.assertEqual(self.api.send_options[-1]['reply_parameters']['message_id'], 72)
+        generate.assert_not_called()
+        self.assertEqual(self.api.messages, [])
 
     def test_weekly_post_is_edited_and_change_is_explained(self):
         self.bot.check([self.week], self.now)
@@ -467,7 +465,7 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn('7 мин назад', result)
         self.assertIn('Источник: отвечает', result)
         self.assertIn('Доставка: без ошибок', result)
-        self.assertIn('AI-канал: ждёт настройки', result)
+        self.assertIn('AI-ответы: выключены', result)
         self.assertIn('Автопроверка: примерно каждые 90 секунд', result)
         self.assertIn('<i>', result)
 
@@ -507,12 +505,25 @@ class ScheduleTests(unittest.TestCase):
             'text': REFRESH_BUTTON_TEXT,
         }})
         self.assertTrue(any(joke in self.api.messages[-1][1] for joke in UNIVERSITY_JOKES))
-        self.assertIn('Настоящая проверка — /refresh', self.api.messages[-1][1])
+        self.assertIn('Настоящая проверка расписания — /refresh', self.api.messages[-1][1])
         keyboard = self.api.send_options[-1]['reply_markup']
         self.assertTrue(keyboard['remove_keyboard'])
         self.assertTrue(keyboard['selective'])
         self.assertNotIn('keyboard', keyboard)
         self.assertEqual(self.api.send_options[-1]['reply_parameters']['message_id'], 807)
+
+    def test_rofl_command_works_immediately_after_help(self):
+        base = {'chat': {'id': -100123, 'type': 'supergroup'}, 'from': {'id': 42}}
+        self.bot.handle({'update_id': 810, 'message': {
+            **base, 'message_id': 809, 'text': '/help',
+        }})
+        self.bot.handle({'update_id': 811, 'message': {
+            **base, 'message_id': 810, 'text': '/rofl',
+        }})
+        self.assertEqual(len(self.api.messages), 2)
+        self.assertTrue(any(joke in self.api.messages[-1][1] for joke in UNIVERSITY_JOKES))
+        self.assertIn('/rofl — бесполезно', self.api.messages[-1][1])
+        self.assertTrue(self.api.send_options[-1]['reply_markup']['remove_keyboard'])
 
     def test_ordinary_schedule_replies_do_not_restore_the_joke_keyboard(self):
         self.bot.put('week:' + self.week['week'], self.week)
@@ -534,9 +545,9 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn('Эта неделя: 12 пар', result)
         self.assertIn('Следующая неделя: ещё не опубликована', result)
 
-    def test_status_sees_runtime_oidc_channel(self):
+    def test_status_keeps_ai_disabled_even_with_runtime_oidc(self):
         result = self.bot.status_message(self.now, 'runtime-oidc-token')
-        self.assertIn('AI-канал: подключён', result)
+        self.assertIn('AI-ответы: выключены', result)
 
     def test_week_caption_contains_counts_and_checked_time(self):
         result = week_caption(self.week, self.now.isoformat())
@@ -581,10 +592,11 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(methods.count('setMyShortDescription'), 1)
         command_call = next(params for method, params in self.api.edits if method == 'setMyCommands')
         names = {item['command'] for item in command_call['commands']}
-        self.assertTrue({'ask', 'when', 'free', 'rooms', 'refresh', 'roast'} <= names)
+        self.assertTrue({'rofl', 'when', 'free', 'rooms', 'refresh', 'roast'} <= names)
+        self.assertNotIn('ask', names)
         self.assertEqual(len(self.api.messages), 1)
-        self.assertIn('Кнопку выселил', self.api.messages[0][1])
-        self.assertIn('Настоящая проверка — /refresh', self.api.messages[0][1])
+        self.assertIn('AI-ответы выключил', self.api.messages[0][1])
+        self.assertIn('/rofl', self.api.messages[0][1])
         keyboard = self.api.send_options[0]['reply_markup']
         self.assertTrue(keyboard['remove_keyboard'])
 
