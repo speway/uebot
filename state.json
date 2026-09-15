@@ -23,7 +23,7 @@
       "hash": "1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991",
       "message_id": 34783
     },
-    "last_success": "2026-09-15T23:49:06.704604+05:00",
+    "last_success": "2026-09-15T23:55:06.765594+05:00",
     "outbox:week:2026-09-07": [],
     "outbox:week:2026-09-14": [],
     "outbox:week:2026-09-21": [],
@@ -99,7 +99,11 @@
       "message_id": 34782,
       "status": "sent"
     },
-    "source_error": null,
+    "source_error": {
+      "at": "2026-09-15T23:57:28.042211+05:00",
+      "detail": "Schedule relay HTTP 502; direct: EduPage connection: TimeoutError: timed out",
+      "type": "SourceError"
+    },
     "week:2026-09-07": {
       "class_name": "Психология 4 курс П2-23",
       "lessons": [
