@@ -91,11 +91,7 @@
       "message_id": 34782,
       "status": "sent"
     },
-    "source_error": {
-      "at": "2026-09-15T06:30:21.011553+05:00",
-      "detail": "EduPage connection: TimeoutError: timed out; relay: Schedule relay HTTP 502",
-      "type": "SourceError"
-    },
+    "source_error": null,
     "week:2026-09-07": {
       "class_name": "Психология 4 курс П2-23",
       "lessons": [
