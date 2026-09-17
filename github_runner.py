@@ -23,6 +23,7 @@ STATE_HEARTBEAT_INTERVAL = dt.timedelta(minutes=10)
 SOURCE_ERROR_HEARTBEAT_INTERVAL = dt.timedelta(minutes=30)
 DEFAULT_CHECK_INTERVAL_SECONDS = 90
 MAX_CONSECUTIVE_SOURCE_FAILURES = 10
+STATE_PUSH_ATTEMPTS = 4
 WEEK_MASK_STATE_VERSION = 2
 PUBLICATION_STYLE_VERSION = 6
 KNOWN_FALSE_WEEK = '2026-09-14'
@@ -35,6 +36,40 @@ def git(*args, cwd=None, allowed=(0,)):
         # Credentials can occur in remote errors; never print raw command output.
         raise RuntimeError('Git operation failed: ' + args[0])
     return result
+
+
+def push_state(cwd, attempts=STATE_PUSH_ATTEMPTS, sleeper=None):
+    """Retry a transient state-branch push without ever force-pushing it."""
+    sleeper = sleeper or time.sleep
+    attempts = max(1, int(attempts))
+    for attempt in range(1, attempts + 1):
+        result = git('push', 'origin', 'HEAD:state', cwd=cwd, allowed=(0, 1, 128))
+        if result.returncode == 0:
+            return
+        if attempt < attempts:
+            delay = min(2 ** (attempt - 1), 4)
+            logging.warning('State push attempt %s/%s failed; retrying in %s seconds.',
+                            attempt, attempts, delay)
+            sleeper(delay)
+    # Keep raw git output private: a remote error can contain credentials.
+    raise RuntimeError('Git operation failed after ' + str(attempts) + ' attempts: push')
+
+
+def report_source_outage(exc, failures):
+    """Expose an upstream outage without turning a healthy workflow red."""
+    message = ('Watcher finished while the timetable source was unavailable after ' +
+               str(failures) + ' consecutive checks: ' + str(exc))
+    logging.warning(message)
+    if os.getenv('GITHUB_ACTIONS') != 'true':
+        return
+    annotation = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')[:1000]
+    print('::warning title=Timetable source unavailable::' + annotation, flush=True)
+    summary_path = os.getenv('GITHUB_STEP_SUMMARY')
+    if summary_path:
+        with open(summary_path, 'a', encoding='utf-8') as summary:
+            summary.write('## Timetable source temporarily unavailable\n\n')
+            summary.write('The watcher preserved the last confirmed timetable and recorded the outage. ')
+            summary.write('This is an upstream availability warning, not a bot deployment failure.\n')
 
 
 def validate_relay_payload(payload):
@@ -141,22 +176,23 @@ def run_checks(bot, fetcher=fetch_snapshots, watch_seconds=0,
             logging.warning('Schedule source unavailable (%s/%s): %s',
                             consecutive_source_failures, max_source_failures, exc)
         if not watching:
-            return
+            return True
         if stop_requested and stop_requested():
             logging.info('A newer main revision is available; handing off to the queued watcher.')
-            return
+            return last_source_error is None
         remaining = deadline - clock()
         if remaining <= 0:
             break
         elapsed = clock() - started
         sleeper(min(max(0, interval_seconds - elapsed), remaining))
     # A temporary outage must not kill the only active watcher. Keep retrying
-    # for the whole bounded run, but still finish red when the source remained
-    # unavailable long enough and never recovered before handoff.
+    # for the whole bounded run. If the external source is still unavailable
+    # at handoff, preserve the last confirmed data and surface a warning, but
+    # do not report a code/deployment failure to GitHub (and email the owner).
     if consecutive_source_failures >= max_source_failures and last_source_error:
-        raise RuntimeError('Watcher ended with source unavailable after ' +
-                           str(consecutive_source_failures) + ' checks: ' +
-                           str(last_source_error)) from None
+        report_source_outage(last_source_error, consecutive_source_failures)
+        return False
+    return True
 
 
 def repair_stored_week_mask_bug(bot, now=None):
@@ -263,7 +299,7 @@ class GitStateBot(Bot):
         changed = git('diff', '--cached', '--quiet', cwd=self.state_dir, allowed=(0, 1)).returncode
         if changed:
             git('commit', '-m', 'Persist schedule check state', cwd=self.state_dir)
-            git('push', 'origin', 'HEAD:state', cwd=self.state_dir)
+            push_state(self.state_dir)
         self._last_persisted_success = self._timestamp(state.get('last_success'))
 
     def put(self, key, value):

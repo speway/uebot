@@ -14,7 +14,7 @@ from bot import (BOT_COMMANDS, REFRESH_BUTTON_TEXT, SourceError, TZ,
                  UNIVERSITY_JOKES, parse_week)
 from github_runner import (GitStateBot, KNOWN_FALSE_WEEK_DIGEST, checked_recently,
                            check_with_confirmation, fetch_snapshots, git,
-                           refresh_stored_publications, run_checks,
+                           push_state, refresh_stored_publications, run_checks,
                            repair_stored_week_mask_bug, validate_relay_payload)
 from test_bot import FakeTelegram, META
 
@@ -280,13 +280,13 @@ class HostingTests(unittest.TestCase):
             return [{'week': '2026-09-07', 'lessons': []}]
 
         bot = WatchBot()
-        run_checks(bot, fetcher, watch_seconds=181, interval_seconds=90,
-                   sleeper=sleep, clock=clock, max_source_failures=1)
+        self.assertTrue(run_checks(bot, fetcher, watch_seconds=181, interval_seconds=90,
+                                  sleeper=sleep, clock=clock, max_source_failures=1))
         self.assertEqual(len(calls), 3)
         self.assertEqual(bot.failures, ['временный сбой', 'временный сбой'])
         self.assertEqual(len(bot.snapshots), 1)
 
-    def test_watcher_reports_persistent_outage_only_after_full_watch_window(self):
+    def test_watcher_warns_but_succeeds_after_persistent_upstream_outage(self):
         class WatchBot:
             def __init__(self):
                 self.failures = []
@@ -310,18 +310,31 @@ class HostingTests(unittest.TestCase):
         def sleep(seconds):
             current[0] += seconds
 
-        with self.assertRaisesRegex(RuntimeError, 'Watcher ended'):
-            run_checks(WatchBot(), fetcher, watch_seconds=181, interval_seconds=90,
-                       sleeper=sleep, clock=lambda: current[0], max_source_failures=1)
+        with patch('github_runner.logging.warning') as warning:
+            healthy = run_checks(WatchBot(), fetcher, watch_seconds=181, interval_seconds=90,
+                                 sleeper=sleep, clock=lambda: current[0], max_source_failures=1)
+        self.assertFalse(healthy)
+        self.assertIn('Watcher finished while the timetable source was unavailable',
+                      warning.call_args.args[0])
         self.assertEqual(len(calls), 3)
         self.assertEqual(current[0], 181)
+
+    def test_state_push_retries_a_transient_git_failure(self):
+        failed = type('Result', (), {'returncode': 1})()
+        succeeded = type('Result', (), {'returncode': 0})()
+        waits = []
+        with patch('github_runner.git', side_effect=[failed, succeeded]) as operation:
+            push_state(self.state, attempts=2, sleeper=waits.append)
+        self.assertEqual(operation.call_count, 2)
+        self.assertEqual(waits, [1])
 
     def test_git_failure_prevents_telegram_send(self):
         git('remote', 'set-url', 'origin', str(self.root / 'absent.git'), cwd=self.state)
         bot = GitStateBot(self.api, -100123, str(self.root / 'fail.db'), self.state)
         try:
-            with self.assertRaises(RuntimeError):
-                bot.send_once('test', 'do not send')
+            with patch('github_runner.time.sleep'):
+                with self.assertRaises(RuntimeError):
+                    bot.send_once('test', 'do not send')
             self.assertEqual(self.api.messages, [])
         finally:
             bot.db.close()
