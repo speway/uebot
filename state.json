@@ -3,7 +3,7 @@
     "bot_config_version": 8,
     "candidate:week:2026-09-07": null,
     "candidate:week:2026-09-14": null,
-    "candidate:week:2026-09-21": null,
+    "candidate:week:2026-09-21": "208f1447aabae9476d1b84445417456a1558c8a724e73316c36fe705a7696171",
     "delivery_attention": false,
     "image-send:2026-09-07:0:847c74632daff9c332021dbe18a3e88b1b6e287a4c8a3065230f22ecdd03b350": true,
     "image-send:2026-09-14:0:3027c337326af41176489a62f78c98f83bd4dc6eaf35addc759dbe414c66ac26": true,
@@ -23,7 +23,7 @@
       "hash": "1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991",
       "message_id": 34783
     },
-    "last_success": "2026-09-19T17:07:51.716203+05:00",
+    "last_success": "2026-09-19T17:09:25.977677+05:00",
     "outbox:week:2026-09-07": [],
     "outbox:week:2026-09-14": [],
     "outbox:week:2026-09-21": [],
