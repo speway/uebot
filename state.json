@@ -65,7 +65,8 @@
       "status": "sent"
     },
     "sent:change:week:2026-09-21:1:208f1447aabae9476d1b84445417456a1558c8a724e73316c36fe705a7696171:0": {
-      "status": "pending"
+      "message_id": 36520,
+      "status": "sent"
     },
     "sent:refresh-button:v1": {
       "message_id": 34567,
