@@ -47,6 +47,12 @@
         "message_id": 34782
       }
     ],
+    "publication:2026-09-28": [
+      {
+        "hash": "a777d5a546a86c9e5ad958eb18676e55fc6759d9b6642b9a0921575ba37be550",
+        "message_id": 36589
+      }
+    ],
     "publication_style_version": 6,
     "repair:week-mask:2026-09-14": null,
     "sent:ai-disabled-rofl-command:v1": {
