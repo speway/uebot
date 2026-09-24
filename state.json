@@ -138,7 +138,8 @@
       "status": "sent"
     },
     "sent:tomorrow:2026-09-25": {
-      "status": "pending"
+      "message_id": 41419,
+      "status": "sent"
     },
     "sent:weekly:publication:2026-09-07:0:0": {
       "message_id": 34356,
