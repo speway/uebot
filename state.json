@@ -5,7 +5,7 @@
     "candidate:week:2026-09-14": null,
     "candidate:week:2026-09-21": null,
     "candidate:week:2026-09-28": null,
-    "delivery_attention": false,
+    "delivery_attention": true,
     "image-send:2026-09-07:0:847c74632daff9c332021dbe18a3e88b1b6e287a4c8a3065230f22ecdd03b350": true,
     "image-send:2026-09-14:0:3027c337326af41176489a62f78c98f83bd4dc6eaf35addc759dbe414c66ac26": true,
     "image-send:2026-09-21:0:0955bd2dbcd9dc28913147298631022d74760e09f573c6a3994e9c345c06d804": true,
@@ -30,7 +30,7 @@
       "hash": "1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991",
       "message_id": 36590
     },
-    "last_success": "2026-09-26T21:50:39.161397+05:00",
+    "last_success": "2026-09-26T21:50:58.621863+05:00",
     "outbox:week:2026-09-07": [],
     "outbox:week:2026-09-14": [],
     "outbox:week:2026-09-21": [],
