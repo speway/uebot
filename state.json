@@ -1111,6 +1111,13 @@
       "source_title": "28 сентября - 3 октября (28. 09. - 03. 10. 2026)",
       "week": "2026-09-28"
     },
+    "week:2026-10-05": {
+      "class_name": "П2-23",
+      "lessons": [],
+      "revision": 0,
+      "source_title": "05.10–10.10.2026 · не опубликовано",
+      "week": "2026-10-05"
+    },
     "week_mask_state_version": 2
   },
   "schema": 1
