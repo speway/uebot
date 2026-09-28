@@ -172,9 +172,7 @@
       "message_id": 36589,
       "status": "sent"
     },
-    "sent:weekly:publication:2026-10-05:0:0": {
-      "status": "pending"
-    },
+    "sent:weekly:publication:2026-10-05:0:0": null,
     "source_error": null,
     "week:2026-09-07": {
       "class_name": "Психология 4 курс П2-23",
