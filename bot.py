@@ -766,15 +766,17 @@ class Telegram:
         try:
             answer = json.loads(urllib.request.urlopen(request, timeout=45).read())
         except urllib.error.HTTPError as exc:
-            if method == 'editMessageText' and exc.code == 400:
-                try:
-                    if 'message is not modified' in json.loads(exc.read()).get('description', '').lower():
-                        return True
-                except (ValueError, UnicodeError):
-                    pass
-            # Never log request URLs: they contain the token.
+            try:
+                description = str(json.loads(exc.read()).get('description', ''))[:200]
+            except (ValueError, UnicodeError, AttributeError):
+                description = ''
+            if method == 'editMessageText' and exc.code == 400 and \
+                    'message is not modified' in description.lower():
+                return True
+            # Never log request URLs: they contain the token. Telegram's
+            # description (e.g. "Unauthorized", "bot was kicked") is safe.
             if 400 <= exc.code < 500:
-                raise TelegramRejected('Telegram HTTP ' + str(exc.code)) from None
+                raise TelegramRejected(f'Telegram {method} HTTP {exc.code}: {description}') from None
             raise DeliveryError('Telegram HTTP ' + str(exc.code)) from None
         except Exception:
             raise DeliveryError('Telegram: результат запроса неизвестен; автоматический повтор отправки отключён') from None
@@ -1011,7 +1013,7 @@ class Bot:
                 errors.append(exc)
         if errors:
             self.put('delivery_attention', True)
-            raise DeliveryError('Publication failed: ' + type(errors[0]).__name__) from None
+            raise DeliveryError('Publication failed: ' + type(errors[0]).__name__ + ': ' + str(errors[0])[:300]) from None
         self.put('delivery_attention', self.delivery_needs_attention())
         self.daily_digest(now)
 
