@@ -184,7 +184,7 @@
     "sent:weekly:publication:2026-10-05:0:0": null,
     "sent:weekly:publication:2026-10-05:1:0": null,
     "source_error": {
-      "at": "2026-10-04T11:51:35.873836+05:00",
+      "at": "2026-10-04T12:23:04.877021+05:00",
       "detail": "Schedule relay HTTP 502; direct: EduPage connection: TimeoutError: timed out",
       "type": "SourceError"
     },
