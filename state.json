@@ -1808,6 +1808,13 @@
       "source_title": "19 - 24 октября (19. 10. - 24. 10. 2026)",
       "week": "2026-10-19"
     },
+    "week:2026-10-26": {
+      "class_name": "П2-23",
+      "lessons": [],
+      "revision": 0,
+      "source_title": "26.10–31.10.2026 · не опубликовано",
+      "week": "2026-10-26"
+    },
     "week_mask_state_version": 2
   },
   "schema": 1
