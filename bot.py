@@ -4,7 +4,10 @@ from __future__ import annotations
 import argparse
 import collections
 import datetime as dt
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 import hashlib
 import html
 import http.client
@@ -805,9 +808,13 @@ class Telegram:
         try:
             with urllib.request.urlopen(request, timeout=60) as response: result=json.load(response)
         except urllib.error.HTTPError as exc:
+            try:
+                description = str(json.loads(exc.read()).get('description', ''))[:200]
+            except Exception:
+                description = ''
             if 400 <= exc.code < 500:
-                raise TelegramRejected('Telegram photo HTTP ' + str(exc.code)) from None
-            raise DeliveryError('Telegram photo HTTP ' + str(exc.code)) from None
+                raise TelegramRejected(f'Telegram photo HTTP {exc.code}: {description}') from None
+            raise DeliveryError(f'Telegram photo HTTP {exc.code}: {description}') from None
         except Exception:
             raise DeliveryError('Telegram photo delivery failed') from None
         if not result.get('ok'): raise TelegramRejected('Telegram rejected photo')
@@ -1015,7 +1022,11 @@ class Bot:
             self.put('delivery_attention', True)
             raise DeliveryError('Publication failed: ' + type(errors[0]).__name__ + ': ' + str(errors[0])[:300]) from None
         self.put('delivery_attention', self.delivery_needs_attention())
-        self.daily_digest(now)
+        try:
+            self.daily_digest(now)
+        except Exception as exc:
+            self.put('delivery_attention', True)
+            raise DeliveryError('Daily digest failed: ' + type(exc).__name__ + ': ' + str(exc)[:300]) from None
 
     def day_messages(self, date, now=None):
         now = now or dt.datetime.now(TZ)
@@ -1449,16 +1460,17 @@ def main():
         return
     token = os.environ.get('TELEGRAM_BOT_TOKEN')
     if not token and os.environ.get('TELEGRAM_TOKEN_FILE'):
-        token = Path(os.environ['TELEGRAM_TOKEN_FILE']).read_text().strip()
+        token = Path(os.environ['TELEGRAM_TOKEN_FILE']).read_text(encoding='utf-8').strip()
     if not token or not os.environ.get('TELEGRAM_CHAT_ID'):
         parser.error('Задайте TELEGRAM_BOT_TOKEN (или TELEGRAM_TOKEN_FILE) и TELEGRAM_CHAT_ID')
     database = os.getenv('DATABASE', '/data/schedule.sqlite3')
     Path(database).parent.mkdir(parents=True, exist_ok=True)
     process_lock = open(database + '.lock', 'a')
-    try:
-        fcntl.flock(process_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        parser.error('С этой базой уже работает другой экземпляр бота')
+    if fcntl:
+        try:
+            fcntl.flock(process_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            parser.error('С этой базой уже работает другой экземпляр бота')
     bot = Bot(Telegram(token), os.environ['TELEGRAM_CHAT_ID'], database,
               os.getenv('OWNER_ID', '0'))
     if args.once:

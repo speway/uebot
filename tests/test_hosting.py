@@ -202,7 +202,7 @@ class HostingTests(unittest.TestCase):
         self.api = FakeTelegram()
 
     def test_restart_restores_baseline_without_duplicate(self):
-        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())
+        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text(encoding='utf-8'))
         snapshot = parse_week(raw, META)
         bot = GitStateBot(self.api, -100123, str(self.root / 'one.db'), self.state)
         bot.check([snapshot], dt.datetime(2026, 9, 7, 7, tzinfo=TZ))
@@ -212,16 +212,16 @@ class HostingTests(unittest.TestCase):
         try:
             restored.check([snapshot], dt.datetime(2026, 9, 7, 8, tzinfo=TZ))
             self.assertEqual(len(self.api.messages), count)
-            public = json.loads((self.state / 'schedule.json').read_text())
+            public = json.loads((self.state / 'schedule.json').read_text(encoding='utf-8'))
             self.assertIn('week:2026-09-07', public['kv'])
             self.assertFalse(any(k.startswith('sent:') for k in public['kv']))
-            state_vercel = json.loads((self.state / 'vercel.json').read_text())
+            state_vercel = json.loads((self.state / 'vercel.json').read_text(encoding='utf-8'))
             self.assertIs(state_vercel['git']['deploymentEnabled'], False)
         finally:
             restored.db.close()
 
     def test_unchanged_checks_only_commit_a_periodic_heartbeat(self):
-        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())
+        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text(encoding='utf-8'))
         snapshot = parse_week(raw, META)
         bot = GitStateBot(self.api, -100123, str(self.root / 'heartbeat.db'), self.state)
         start = dt.datetime(2026, 9, 7, 7, tzinfo=TZ)
@@ -319,6 +319,35 @@ class HostingTests(unittest.TestCase):
         self.assertEqual(len(calls), 3)
         self.assertEqual(current[0], 181)
 
+    def test_watcher_warns_and_continues_on_delivery_failure(self):
+        from bot import DeliveryError
+
+        class DeliveryFailBot:
+            def __init__(self):
+                self.calls = 0
+            def check(self, snapshots, now=None):
+                self.calls += 1
+                raise DeliveryError('Telegram HTTP 403: Forbidden')
+            def _items(self, prefix):
+                return []
+
+        calls = []
+        def fetcher():
+            calls.append(True)
+            return [{'week': '2026-10-19', 'lessons': []}]
+
+        current = [0.0]
+        def sleep(seconds):
+            current[0] += seconds
+
+        bot = DeliveryFailBot()
+        with patch('github_runner.logging.warning') as warning:
+            healthy = run_checks(bot, fetcher, watch_seconds=181, interval_seconds=90,
+                                 sleeper=sleep, clock=lambda: current[0])
+        self.assertTrue(healthy)
+        self.assertEqual(bot.calls, 3)
+        self.assertIn('Telegram delivery failed', warning.call_args.args[0])
+
     def test_state_push_retries_a_transient_git_failure(self):
         failed = type('Result', (), {'returncode': 1})()
         succeeded = type('Result', (), {'returncode': 0})()
@@ -344,7 +373,7 @@ class HostingTests(unittest.TestCase):
             GitStateBot(self.api, -100123, str(self.root / 'missing.db'), self.state, True)
 
     def test_new_week_is_confirmed_before_first_publication(self):
-        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())
+        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text(encoding='utf-8'))
         current = parse_week(raw, META)
         future = json.loads(json.dumps(current))
         future['week'] = '2026-09-14'
@@ -368,7 +397,7 @@ class HostingTests(unittest.TestCase):
             bot.db.close()
 
     def test_docker_runtime_contains_every_imported_bot_module(self):
-        dockerfile = (Path(__file__).parent.parent / 'Dockerfile').read_text()
+        dockerfile = (Path(__file__).parent.parent / 'Dockerfile').read_text(encoding='utf-8')
         self.assertIn('pip install --no-cache-dir -r /app/requirements.txt', dockerfile)
         for module in ('bot.py', 'bot_copy.py', 'schedule_image.py'):
             self.assertIn(module, dockerfile)
@@ -376,7 +405,7 @@ class HostingTests(unittest.TestCase):
 
     def test_persisted_false_next_week_is_repaired_without_source_access(self):
         from unittest.mock import Mock
-        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())
+        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text(encoding='utf-8'))
         current = parse_week(raw, META)
         snapshot = json.loads(json.dumps(current))
         snapshot['week'] = '2026-09-14'
@@ -656,7 +685,7 @@ class HostingTests(unittest.TestCase):
         self.assertEqual(failed['kv']['sentinel'], 7)
 
     def test_detected_change_is_rechecked_inside_same_run(self):
-        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())
+        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text(encoding='utf-8'))
         snapshot = parse_week(raw, META)
         bot = GitStateBot(self.api, -100123, str(self.root / 'confirm.db'), self.state)
         now = dt.datetime(2026, 9, 7, 7, tzinfo=TZ)

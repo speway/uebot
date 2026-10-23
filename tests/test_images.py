@@ -11,7 +11,7 @@ from test_bot import META
 
 class ImageTests(unittest.TestCase):
     def snapshot(self):
-        return parse_week(json.loads((Path(__file__).parent/'edupage_130.json').read_text()),META)
+        return parse_week(json.loads((Path(__file__).parent/'edupage_130.json').read_text(encoding='utf-8')),META)
 
     def test_real_week_is_valid_telegram_image(self):
         im=Image.open(BytesIO(render_image(self.snapshot())))

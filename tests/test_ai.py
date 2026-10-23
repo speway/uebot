@@ -50,7 +50,7 @@ class FakeResponse:
 class AIResponderTests(unittest.TestCase):
     def setUp(self):
         reset_runtime_state()
-        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())
+        raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text(encoding='utf-8'))
         self.week = parse_week(raw, META)
         next_week = copy.deepcopy(self.week)
         next_week['week'] = '2026-09-14'

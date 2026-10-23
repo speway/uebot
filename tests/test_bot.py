@@ -169,7 +169,7 @@ class ScheduleTests(unittest.TestCase):
             self.assertEqual(im.format, 'PNG')
 
     def setUp(self):
-        self.raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text())
+        self.raw = json.loads((Path(__file__).parent / 'edupage_130.json').read_text(encoding='utf-8'))
         self.week = parse_week(self.raw, META)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

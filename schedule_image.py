@@ -39,8 +39,17 @@ def _plural(number, one, few, many):
 
 def _fonts():
     sizes = (15, 16, 17, 18, 19, 20, 22, 24, 26, 28, 30, 32, 36, 42, 58, 64)
-    return ({size: ImageFont.truetype('DejaVuSans.ttf', size) for size in sizes},
-            {size: ImageFont.truetype('DejaVuSans-Bold.ttf', size) for size in sizes})
+    try:
+        return ({size: ImageFont.truetype('DejaVuSans.ttf', size) for size in sizes},
+                {size: ImageFont.truetype('DejaVuSans-Bold.ttf', size) for size in sizes})
+    except OSError:
+        try:
+            return ({size: ImageFont.truetype('arial.ttf', size) for size in sizes},
+                    {size: ImageFont.truetype('arialbd.ttf', size) for size in sizes})
+        except OSError:
+            default_font = ImageFont.load_default()
+            return ({size: default_font for size in sizes},
+                    {size: default_font for size in sizes})
 
 
 def _wrap(draw, text, font, max_width):

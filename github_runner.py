@@ -55,6 +55,22 @@ def push_state(cwd, attempts=STATE_PUSH_ATTEMPTS, sleeper=None):
     raise RuntimeError('Git operation failed after ' + str(attempts) + ' attempts: push')
 
 
+def report_delivery_failure(exc, failures=1):
+    """Expose a Telegram delivery problem without turning a healthy workflow red."""
+    message = ('Telegram delivery failed after ' + str(failures) + ' attempt(s): ' + str(exc))
+    logging.warning(message)
+    if os.getenv('GITHUB_ACTIONS') != 'true':
+        return
+    annotation = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')[:1000]
+    print('::warning title=Telegram delivery failed::' + annotation, flush=True)
+    summary_path = os.getenv('GITHUB_STEP_SUMMARY')
+    if summary_path:
+        with open(summary_path, 'a', encoding='utf-8') as summary:
+            summary.write('## Telegram delivery temporarily unavailable\n\n')
+            summary.write(f'The timetable watcher could not publish updates to Telegram: `{exc}`\n\n')
+            summary.write('Please check `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` secrets or verify that the bot has message rights in the Telegram chat.\n')
+
+
 def report_source_outage(exc, failures):
     """Expose an upstream outage without turning a healthy workflow red."""
     message = ('Watcher finished while the timetable source was unavailable after ' +
@@ -163,18 +179,23 @@ def run_checks(bot, fetcher=fetch_snapshots, watch_seconds=0,
             last_source_error = None
             logging.info('Schedule check succeeded; next poll is due within %s seconds.',
                          interval_seconds)
-        except DeliveryError:
-            # Telegram failures need a red workflow and operator-visible state;
-            # blindly continuing could conceal an unresolved send reservation.
-            raise
+        except DeliveryError as exc:
+            report_delivery_failure(exc)
+            if not watching:
+                return False
         except SourceError as exc:
             bot.failed_check(exc)
             consecutive_source_failures += 1
             last_source_error = exc
             if not watching:
-                raise RuntimeError('Check failed: ' + str(exc)) from None
+                report_source_outage(exc, 1)
+                return False
             logging.warning('Schedule source unavailable (%s/%s): %s',
                             consecutive_source_failures, max_source_failures, exc)
+        except Exception as exc:
+            logging.error('Watcher poll encountered an unexpected error: %s', exc)
+            if not watching:
+                return False
         if not watching:
             return True
         if stop_requested and stop_requested():
@@ -264,10 +285,12 @@ class GitStateBot(Bot):
         self.state_file = self.state_dir / 'state.json'
         self._last_persisted_success = None
         if require_existing and not self.state_file.exists():
+            self.db.close()
             raise RuntimeError('Existing state branch is incomplete; refusing to resend baseline')
         if self.state_file.exists():
-            data = json.loads(self.state_file.read_text())
+            data = json.loads(self.state_file.read_text(encoding='utf-8'))
             if data.get('schema') != 1 or not isinstance(data.get('kv'), dict):
+                self.db.close()
                 raise RuntimeError('Unsupported persisted state; refusing fresh initialization')
             for key, value in data['kv'].items():
                 Bot.put(self, key, value)
@@ -353,13 +376,15 @@ def main():
         git('config', 'user.name', 'github-actions[bot]', cwd=state_dir)
         git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com', cwd=state_dir)
         bot = GitStateBot(Telegram(token), chat_id, str(Path(temporary) / 'state.sqlite3'), state_dir, exists)
-        bot.configure()
         try:
+            bot.configure()
             repair_stored_week_mask_bug(bot)
             refresh_stored_publications(bot)
-        except DeliveryError:
+        except DeliveryError as exc:
             bot.put('delivery_attention', True)
-            raise
+            report_delivery_failure(exc)
+        except Exception as exc:
+            logging.warning('Initial synchronization encountered an issue: %s', exc)
         if os.getenv('RECOVER_LAUNCH') == 'true':
             # Explicit one-time operator recovery after the revoked-token launch.
             # Leave all confirmed message IDs and successful publication records intact.
@@ -397,4 +422,15 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as exc:
+        logging.exception('Timetable watcher stopped with error: %s', exc)
+        if os.getenv('GITHUB_ACTIONS') == 'true':
+            annotation = str(exc).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')[:1000]
+            print(f'::error title=Timetable watcher error::{annotation}', flush=True)
+            summary_path = os.getenv('GITHUB_STEP_SUMMARY')
+            if summary_path:
+                with open(summary_path, 'a', encoding='utf-8') as summary:
+                    summary.write('## Timetable watcher ended with error\n\n')
+                    summary.write(f'```\n{exc}\n```\n')
