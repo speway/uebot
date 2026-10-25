@@ -226,9 +226,7 @@
     "sent:weekly:publication:2026-10-26:0:0": null,
     "sent:weekly:publication:2026-10-26:1:0": null,
     "sent:weekly:publication:2026-10-26:2:0": null,
-    "sent:weekly:publication:2026-10-26:3:0": {
-      "status": "pending"
-    },
+    "sent:weekly:publication:2026-10-26:3:0": null,
     "source_error": null,
     "week:2026-09-07": {
       "class_name": "Психология 4 курс П2-23",
