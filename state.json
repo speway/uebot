@@ -35,7 +35,7 @@
       "hash": "1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991",
       "message_id": 36590
     },
-    "last_success": "2026-10-30T19:21:13.472983+05:00",
+    "last_success": "2026-10-30T19:22:43.601118+05:00",
     "outbox:week:2026-09-07": [],
     "outbox:week:2026-09-14": [],
     "outbox:week:2026-09-21": [],
@@ -112,6 +112,12 @@
       {
         "hash": "a777d5a546a86c9e5ad958eb18676e55fc6759d9b6642b9a0921575ba37be550",
         "message_id": 36589
+      }
+    ],
+    "publication:2026-10-26": [
+      {
+        "hash": "de041f15c7596903836f4348708bf3c8268a8b461b6282697c1dd8a7d46f615b",
+        "message_id": null
       }
     ],
     "publication_style_version": 6,
