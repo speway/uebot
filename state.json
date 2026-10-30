@@ -121,6 +121,12 @@
         "message_id": null
       }
     ],
+    "publication:2026-11-02": [
+      {
+        "hash": "c168d588c1a90c3bdcfe090fbba084abbf761168e8ae2d7ddc9720117b6d08d6",
+        "message_id": null
+      }
+    ],
     "publication_style_version": 6,
     "repair:week-mask:2026-09-14": null,
     "sent:ai-disabled-rofl-command:v1": {
