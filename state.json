@@ -247,7 +247,7 @@
       "status": "pending"
     },
     "source_error": {
-      "at": "2026-10-31T16:27:31.007611+05:00",
+      "at": "2026-10-31T16:57:31.404036+05:00",
       "detail": "Schedule relay HTTP 502; direct: EduPage connection: TimeoutError: timed out",
       "type": "SourceError"
     },
