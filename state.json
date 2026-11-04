@@ -253,9 +253,7 @@
     "sent:weekly:publication:2026-11-02:0:0": {
       "status": "pending"
     },
-    "sent:weekly:publication:2026-11-02:1:0": {
-      "status": "pending"
-    },
+    "sent:weekly:publication:2026-11-02:1:0": null,
     "sent:weekly:publication:2026-11-09:0:0": null,
     "source_error": null,
     "week:2026-09-07": {
