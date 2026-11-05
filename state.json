@@ -136,6 +136,12 @@
         "message_id": null
       }
     ],
+    "publication:2026-11-09": [
+      {
+        "hash": "327f9f930f5d1499f8b09a7599defb4d0208fac6acafba586a798b751cce4c50",
+        "message_id": null
+      }
+    ],
     "publication_style_version": 6,
     "repair:week-mask:2026-09-14": null,
     "sent:ai-disabled-rofl-command:v1": {
