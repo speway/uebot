@@ -19,6 +19,7 @@
     "image-send:2026-10-26:3:cda9ab5dc8634afad2007f53a2a0983f227a85b8880d73a68d624ee67a52d38d": null,
     "image-send:2026-11-02:0:1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991": null,
     "image-send:2026-11-02:1:5456beac7cf62347def000712f01e9340c2643ba9fa3e2e388dc63efd80497bd": true,
+    "image-send:2026-11-09:0:1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991": true,
     "image:2026-09-07": {
       "file_id": "AgACAgIAAyEGAATg8LgvAAKGNWqmreRp0TKdBQHNhaP0NJvV-z-YAAIdKmsbVpo5Se7PKz1g06ntAQADAgADdwADPQQ",
       "hash": "3640a5829749180bb3f7b273c37592227b61504bbc170e63a8071c0fc1637e3f",
