@@ -272,7 +272,11 @@
       "status": "pending"
     },
     "sent:weekly:publication:2026-11-09:1:0": null,
-    "source_error": null,
+    "source_error": {
+      "at": "2026-11-08T01:39:21.417985+05:00",
+      "detail": "Schedule relay HTTP 502; direct: EduPage connection: TimeoutError: timed out",
+      "type": "SourceError"
+    },
     "week:2026-09-07": {
       "class_name": "Психология 4 курс П2-23",
       "lessons": [
