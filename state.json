@@ -2564,6 +2564,13 @@
       "source_title": "9 - 14 ноября (09. 11. - 14. 11. 2026)",
       "week": "2026-11-09"
     },
+    "week:2026-11-16": {
+      "class_name": "П2-23",
+      "lessons": [],
+      "revision": 0,
+      "source_title": "16.11–21.11.2026 · не опубликовано",
+      "week": "2026-11-16"
+    },
     "week_mask_state_version": 2
   },
   "schema": 1
