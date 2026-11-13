@@ -42,7 +42,7 @@
       "hash": "1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991",
       "message_id": 36590
     },
-    "last_success": "2026-11-13T14:49:07.325085+05:00",
+    "last_success": "2026-11-13T14:50:37.452488+05:00",
     "outbox:week:2026-09-07": [],
     "outbox:week:2026-09-14": [],
     "outbox:week:2026-09-21": [],
@@ -171,7 +171,9 @@
     "sent:change:week:2026-11-02:1:9136c7cf5a39c38e8bae40bfc590c6af56060999c46cd03d8820a3c7f7a631c0:0": {
       "status": "pending"
     },
-    "sent:change:week:2026-11-09:1:1a856d9f219f6ed8cdf58164ed74d1a2c2198d5d6ca01f1143332663679c0716:0": null,
+    "sent:change:week:2026-11-09:1:1a856d9f219f6ed8cdf58164ed74d1a2c2198d5d6ca01f1143332663679c0716:0": {
+      "status": "pending"
+    },
     "sent:refresh-button:v1": {
       "message_id": 34567,
       "status": "sent"
