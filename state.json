@@ -24,7 +24,7 @@
     "image-send:2026-11-09:0:1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991": true,
     "image-send:2026-11-09:1:5deb766c4f11bd3660558212cccd11e22880eff86ba94a14e2e9382f909e0da6": true,
     "image-send:2026-11-16:0:1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991": true,
-    "image-send:2026-11-16:1:c4b1c52cfd4180a0a171358a972ef934905ab74230accf95abb1d11d70cb868b": null,
+    "image-send:2026-11-16:1:c4b1c52cfd4180a0a171358a972ef934905ab74230accf95abb1d11d70cb868b": true,
     "image:2026-09-07": {
       "file_id": "AgACAgIAAyEGAATg8LgvAAKGNWqmreRp0TKdBQHNhaP0NJvV-z-YAAIdKmsbVpo5Se7PKz1g06ntAQADAgADdwADPQQ",
       "hash": "3640a5829749180bb3f7b273c37592227b61504bbc170e63a8071c0fc1637e3f",
@@ -45,7 +45,7 @@
       "hash": "1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991",
       "message_id": 36590
     },
-    "last_success": "2026-11-15T23:56:47.486251+05:00",
+    "last_success": "2026-11-15T23:58:17.235475+05:00",
     "outbox:week:2026-09-07": [],
     "outbox:week:2026-09-14": [],
     "outbox:week:2026-09-21": [],
