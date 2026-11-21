@@ -48,7 +48,7 @@
       "hash": "1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991",
       "message_id": 36590
     },
-    "last_success": "2026-11-21T20:29:27.911274+05:00",
+    "last_success": "2026-11-21T20:30:58.012516+05:00",
     "outbox:week:2026-09-07": [],
     "outbox:week:2026-09-14": [],
     "outbox:week:2026-09-21": [],
@@ -325,7 +325,9 @@
     "sent:weekly:publication:2026-11-16:1:0": {
       "status": "pending"
     },
-    "sent:weekly:publication:2026-11-16:2:0": null,
+    "sent:weekly:publication:2026-11-16:2:0": {
+      "status": "pending"
+    },
     "sent:weekly:publication:2026-11-23:0:0": {
       "status": "pending"
     },
