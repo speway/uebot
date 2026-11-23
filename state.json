@@ -349,7 +349,7 @@
     },
     "sent:weekly:publication:2026-11-30:1:0": null,
     "source_error": {
-      "at": "2026-11-23T06:55:43.497438+05:00",
+      "at": "2026-11-23T07:25:43.747408+05:00",
       "detail": "Schedule relay HTTP 502; direct: EduPage connection: TimeoutError: timed out",
       "type": "SourceError"
     },
