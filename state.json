@@ -223,7 +223,9 @@
     "sent:change:week:2026-11-16:1:bcc42a18f05752a43deb85f35af4e10e9f2f1742a90cd573cb0678cb15891302:0": {
       "status": "pending"
     },
-    "sent:change:week:2026-11-30:1:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945:0": null,
+    "sent:change:week:2026-11-30:1:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945:0": {
+      "status": "pending"
+    },
     "sent:refresh-button:v1": {
       "message_id": 34567,
       "status": "sent"
