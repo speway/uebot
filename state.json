@@ -28,7 +28,7 @@
     "image-send:2026-11-16:1:c4b1c52cfd4180a0a171358a972ef934905ab74230accf95abb1d11d70cb868b": true,
     "image-send:2026-11-16:2:52488a2a2d26c54ba340a9aff7db101619686908f06654cf2a65a6cbb9fea102": null,
     "image-send:2026-11-23:0:6f3b5d4e30756bb415394ac9bad17d00e457c124cdc780b882ad3ec66f102dd8": true,
-    "image-send:2026-11-23:3:0d5945e54a48b2524787630cebe3a083c6441da8beed5608f18d6a2de4c30fa4": null,
+    "image-send:2026-11-23:3:0d5945e54a48b2524787630cebe3a083c6441da8beed5608f18d6a2de4c30fa4": true,
     "image-send:2026-11-30:0:ca6036a8e8919c68f0476046a4eff76bf79eb5c2374100f9eb6e4942ee26a599": true,
     "image-send:2026-11-30:1:1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991": true,
     "image-send:2026-11-30:2:fe6c443fdf6ce16b2042630d944ecfa9c2bb9d51452664b7f84779760a63f3d2": null,
@@ -52,7 +52,7 @@
       "hash": "1106983310a3ef51ed7e48c948112aa571fc6aa9dcf27a4ff48dc16fe8de8991",
       "message_id": 36590
     },
-    "last_success": "2026-11-28T20:08:23.588573+05:00",
+    "last_success": "2026-11-28T20:09:53.614753+05:00",
     "outbox:week:2026-09-07": [],
     "outbox:week:2026-09-14": [],
     "outbox:week:2026-09-21": [],
